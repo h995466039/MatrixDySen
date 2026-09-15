@@ -1,0 +1,16 @@
+# QA / 测试产物（浏览器 profile 缓存、日志、db-journal、临时截图）
+output/
+
+# 依赖与构建产物
+node_modules/
+dist/
+build/
+*.log
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
