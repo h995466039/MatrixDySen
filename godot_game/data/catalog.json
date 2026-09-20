@@ -1,0 +1,29 @@
+{
+  "directions": ["north", "east", "south", "west"],
+  "buildings": {
+    "miner": {"label": "采矿机", "size": [2, 2], "sprite_prefix": "building_mining-drill", "cost": {"iron": 10}, "power": 0.6},
+    "smelter": {"label": "冶炼机", "size": [2, 2], "sprite_prefix": "building_smelter", "cost": {"iron": 12}, "power": 0.9},
+    "sorter": {"label": "分拣器", "size": [1, 1], "sprite_prefix": "building_sorter", "cost": {"iron": 3, "copper": 1}, "power": 0.1},
+    "storage": {"label": "物流仓储", "size": [2, 2], "sprite_prefix": "building_storage", "cost": {"iron": 16}, "power": 0.15},
+    "research-lab": {"label": "科研站", "size": [2, 2], "sprite_prefix": "building_research-lab", "cost": {"iron": 20, "copper": 8}, "power": 1.6},
+    "assembler": {"label": "装配机", "size": [2, 2], "sprite_prefix": "building_assembler", "cost": {"iron": 24, "copper": 10}, "power": 2.1}
+  },
+  "resources": {
+    "iron": {"label": "铁", "color": "#b56e58"},
+    "copper": {"label": "铜", "color": "#ff9b3d"},
+    "silicon": {"label": "硅晶", "color": "#69d8da"},
+    "ironIngot": {"label": "铁锭", "color": "#d58a6c"},
+    "copperIngot": {"label": "铜锭", "color": "#ffc266"},
+    "electromagneticCube": {"label": "电磁矩阵", "color": "#61d9e4", "sprite": "resource_matrix_v02.png"}
+  },
+  "recipes": {
+    "smelter": {"iron": "ironIngot", "copper": "copperIngot"},
+    "research-lab": {"copperIngot": 1, "ironIngot": 1, "output": "electromagneticCube"}
+  },
+  "directional_asset_sets": {
+    "wind-generator": {"label": "风力发电机", "sprite_prefix": "building_wind-generator", "directions": ["north", "east", "south", "west"]},
+    "thermal-generator": {"label": "火力发电机", "sprite_prefix": "building_thermal-generator", "directions": ["north", "east", "south", "west"]},
+    "oil-extractor": {"label": "石油提取机", "sprite_prefix": "building_oil-extractor", "directions": ["north", "east", "south", "west"]},
+    "workbench": {"label": "精密工作台", "sprite_prefix": "building_workbench", "directions": ["north", "east", "south", "west"]}
+  }
+}

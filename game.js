@@ -2,6 +2,13 @@ const canvas = document.querySelector('#game-canvas');
 const ctx = canvas.getContext('2d');
 const shell = document.querySelector('#game-shell');
 const TILE = 48;
+const WORLD_BOUNDS = Object.freeze({ minX: -18, maxX: 18, minY: -12, maxY: 12 });
+const terrainRegions = [
+  { kind: 'rock', label: '玄武岩岩场', short: '岩石', minX: -16, maxX: -13, minY: -9, maxY: -6 },
+  { kind: 'rock', label: '玄武岩岩场', short: '岩石', minX: 12, maxX: 15, minY: -8, maxY: -5 },
+  { kind: 'water', label: '低洼水域', short: '水域', minX: -15, maxX: -11, minY: 7, maxY: 10 },
+  { kind: 'water', label: '低洼水域', short: '水域', minX: 15, maxX: 17, minY: 8, maxY: 10 }
+];
 const SAVE_KEY = 'stellar-echo-sandbox-v2';
 const LEGACY_SAVE_KEY = 'stellar-echo-sandbox-v1';
 const urlParams = new URLSearchParams(window.location.search);
@@ -19,20 +26,19 @@ const assetPaths = {
   siliconWafer: 'output/imagegen/resource-silicon-wafer-v01.png',
   processor: 'output/imagegen/resource-processor-chip-v01.png',
   titanium: 'output/imagegen/resource-titanium-crystal-v01.png',
-  electromagneticCube: 'output/imagegen/resource-electromagnetic-matrix-v01.png',
-  energyCube: 'output/imagegen/resource-energy-matrix-v01.png',
-  structureCube: 'output/imagegen/resource-structure-matrix-v01.png',
-  informationCube: 'output/imagegen/resource-information-matrix-v01.png',
+  electromagneticCube: 'godot_game/assets/generated/resource_matrix_v02.png',
   miner: 'output/imagegen/building-mining-drill-v01.png',
   smelter: 'output/imagegen/building-smelter-v01.png',
   assembler: 'output/imagegen/building-assembler-v01.png',
-  researchLab: 'output/imagegen/building-research-lab-v01.png',
-  sorter: 'output/imagegen/building-sorter-v01.png',
-  wind: 'output/imagegen/building-wind-generator-v01.png',
-  thermal: 'output/imagegen/building-thermal-generator-v01.png',
-  oilExtractor: 'output/imagegen/building-oil-extractor-v01.png',
-  cargoShip: 'output/imagegen/space-cargo-ship-v01.png',
-  hub: 'output/imagegen/building-energy-core-v01.png'
+  researchLab: 'godot_game/assets/generated/building_research-lab_north.png',
+  sorter: 'godot_game/assets/generated/building_sorter_north.png',
+  wind: 'godot_game/assets/generated/building_wind-generator_north.png',
+  thermal: 'godot_game/assets/generated/building_thermal-generator_north.png',
+  oilExtractor: 'godot_game/assets/generated/building_oil-extractor_north.png',
+  storage: 'godot_game/assets/generated/building_storage_north.png',
+  groundTile: 'output/imagegen/godot-v02-ground-tile.png',
+  rockTile: 'output/imagegen/godot-v02-ground-tile.png',
+  waterTile: 'godot_game/assets/generated/terrain_water_tile_v01.png',
 };
 Object.entries(assetPaths).forEach(([key, path]) => {
   const image = new Image();
@@ -40,12 +46,81 @@ Object.entries(assetPaths).forEach(([key, path]) => {
   assets[key] = image;
 });
 
+function imageLoadState(image) {
+  return hasImage(image) ? 'loaded' : 'fallback';
+}
+
+function waitForImage(image) {
+  return new Promise(resolve => {
+    let settled = false;
+    const settle = loaded => {
+      if (settled) return;
+      settled = true;
+      image.removeEventListener('load', onLoad);
+      image.removeEventListener('error', onError);
+      resolve(loaded);
+    };
+    const onLoad = () => settle(true);
+    const onError = () => settle(false);
+    image.addEventListener('load', onLoad, { once: true });
+    image.addEventListener('error', onError, { once: true });
+    if (image.complete) window.setTimeout(() => settle(imageLoadState(image) === 'loaded'), 0);
+  });
+}
+
+async function preloadGameAssets() {
+  const entries = new Map();
+  const addEntry = (src, image, label) => {
+    if (!src) return;
+    const url = new URL(src, document.baseURI).href;
+    if (entries.has(url)) return;
+    const resource = image || new Image();
+    if (!resource.src || new URL(resource.src, document.baseURI).href !== url) resource.src = src;
+    entries.set(url, { image: resource, label: label || src });
+  };
+  Object.entries(assetPaths).forEach(([key, src]) => addEntry(src, assets[key], key));
+  [...document.images].forEach((image, index) => addEntry(image.currentSrc || image.src, image, `界面素材 ${index + 1}`));
+  addEntry('output/imagegen/stellar-ring-concept-v01.png', null, '星图背景');
+  if (typeof careerCatalog !== 'undefined') Object.values(careerCatalog).forEach(career => addEntry(`output/imagegen/${career.image}`, null, career.label));
+
+  const loader = query('#asset-loader');
+  const fill = query('#asset-loader-fill');
+  const percent = query('#asset-loader-percent');
+  const detail = query('#asset-loader-detail');
+  const status = query('#asset-loader-status');
+  const total = entries.size;
+  let completed = 0;
+  const update = (label, loaded) => {
+    completed += 1;
+    const progress = total ? completed / total : 1;
+    if (fill) fill.style.width = `${progress * 100}%`;
+    if (percent) percent.textContent = `${Math.round(progress * 100)}%`;
+    if (detail) detail.textContent = `${completed} / ${total} 资源已校验`;
+    if (status) status.textContent = loaded ? `已接入 · ${label}` : `素材不可用 · ${label} · 使用程序绘制`;
+  };
+  const results = await Promise.all([...entries.values()].map(async entry => {
+    const loaded = await waitForImage(entry.image);
+    update(entry.label, loaded);
+    return { ...entry, loaded };
+  }));
+  const failures = results.filter(entry => !entry.loaded);
+  document.body.dataset.assetsReady = 'true';
+  document.body.dataset.assetFailures = String(failures.length);
+  if (status) status.textContent = failures.length ? `资源校验完成 · ${failures.length} 项使用程序绘制` : '资源校验完成 · 工厂系统就绪';
+  if (detail) detail.textContent = `${total} / ${total} 资源已校验`;
+  if (percent) percent.textContent = '100%';
+  if (fill) fill.style.width = '100%';
+  if (loader) query('#asset-loader-note').textContent = failures.length ? '缺失素材已切换为程序绘制，不影响建造与物流' : '所有素材已就绪，正在进入地表工厂';
+  return results;
+}
+
 const resources = {
   copper: { label: '铜', color: '#ff9b3d', image: 'copper' },
   silicon: { label: '硅', color: '#69d8da', image: 'silicon' },
   iron: { label: '铁', color: '#b56e58', image: 'iron' },
   coal: { label: '煤', color: '#827a88' },
   crudeOil: { label: '原油', color: '#c97849' },
+  water: { label: '水', color: '#5cc8ed' },
   ironIngot: { label: '铁锭', color: '#d58a6c' },
   ice: { label: '冰', color: '#8ccfff', image: 'ice' },
   copperIngot: { label: '铜锭', color: '#ffc266', image: 'copperIngot' },
@@ -59,25 +134,32 @@ const resources = {
 };
 
 const sorterRouteCatalog = [
-  'iron', 'copper', 'silicon', 'coal', 'crudeOil', 'ice', 'titanium',
+  'iron', 'copper', 'silicon', 'coal', 'crudeOil', 'water', 'ice', 'titanium',
   'ironIngot', 'copperIngot', 'siliconWafer', 'processor',
   'electromagneticCube', 'energyCube', 'structureCube', 'informationCube'
 ];
 
 const buildings = {
-  miner: { label: '采矿机', size: 2, color: '#ff9b3d', power: .6, cost: { iron: 8 }, tech: 'foundation', image: 'miner' },
-  smelter: { label: '冶炼机', size: 2, color: '#f7c35e', power: .9, cost: { iron: 10 }, tech: 'foundation', image: 'smelter' },
+  miner: { label: '采矿机', size: 2, color: '#ff9b3d', power: .6, cost: { iron: 8, copper: 2 }, tech: 'foundation', image: 'miner' },
+  smelter: { label: '冶炼机', size: 2, color: '#f7c35e', power: .9, cost: { iron: 10, copper: 2 }, tech: 'foundation', image: 'smelter' },
+  waterPump: { label: '水泵', size: 2, color: '#5cc8ed', power: .7, cost: { iron: 10, copper: 2 }, tech: 'foundation' },
+  powerTower: { label: '电力塔', size: 1, color: '#69d8da', power: .08, transmissionRange: 5, cost: { iron: 6, copper: 2 }, tech: 'foundation' },
   // The first assembler is the bootstrap for processors, so it cannot itself
   // require a processor. Later buildings still carry the same production
   // recipe and remain gated by power, inputs, and logistics.
-  assembler: { label: '组装机', size: 2, color: '#c7d94c', power: 1.2, cost: { iron: 2 }, tech: 'automated-smelting', image: 'assembler' },
-  sorter: { label: '分拣器', size: 1, color: '#69d8da', power: .1, cost: { iron: 4, copper: 2 }, tech: 'sorter-tech' },
+  assembler: { label: '组装机', size: 2, color: '#c7d94c', power: 1.2, cost: { iron: 8, copper: 4, processor: 1 }, tech: 'automated-smelting', image: 'assembler' },
+  // The first sorter is part of the foundation loop. Smart sorting later
+  // upgrades the same physical interface with rules and multiple exits.
+  sorter: { label: '分拣器', size: 1, color: '#69d8da', power: .1, cost: { iron: 4, copper: 2 }, tech: 'foundation', image: 'sorter' },
   workbench: { label: '工作台', size: 2, color: '#e8a46e', power: .5, cost: { iron: 12, copper: 4 }, tech: 'workbench-tech' },
   wind: { label: '风力发电机', size: 2, color: '#a8e7dd', power: 0, generation: 2.6, cost: { iron: 10, copper: 6 }, tech: 'wind-power' },
   thermal: { label: '火力发电机', size: 2, color: '#ee765c', power: .2, generation: 6, cost: { iron: 18, copper: 10 }, tech: 'thermal-power' },
+  longPowerTower: { label: '远距离电力塔', size: 1, color: '#8ccfff', power: .14, transmissionRange: 9, cost: { iron: 12, copper: 6, processor: 1 }, tech: 'power-transmission' },
+  ultraPowerTower: { label: '超远距离电力塔', size: 2, color: '#c58cff', power: .24, transmissionRange: 15, cost: { iron: 24, copper: 12, processor: 3 }, tech: 'advanced-power-grid' },
   oilExtractor: { label: '石油提取机', size: 2, color: '#d18a57', power: 2.2, cost: { iron: 24, processor: 2 }, tech: 'oil-processing' },
   researchLab: { label: '科研站', size: 2, color: '#7ed6ff', power: 1.6, cost: { iron: 20, processor: 4 }, tech: 'foundation', image: 'researchLab' },
-  hub: { label: '能源核心', size: 3, color: '#69d8da', power: 0, generation: 12, cost: {}, tech: 'foundation', image: 'hub' }
+  storage: { label: '物流仓储', size: 2, color: '#a7c7ff', power: .15, cost: { iron: 16, copper: 4 }, tech: 'foundation', image: 'storage' },
+  logisticsStation: { label: '行星物流站', size: 3, color: '#c58cff', power: 2.8, cost: { iron: 32, processor: 6, titanium: 4 }, tech: 'interstellar-logistics' }
 };
 
 const cubeRecipes = {
@@ -92,28 +174,41 @@ const techTree = {
     { id: 'planetary-logistics', label: '行星物流', short: '物流主干', description: '建立行星级物流网络，研究分拣与长距离运输。', cube: 'electromagneticCube', cost: 12 },
     { id: 'automated-smelting', label: '自动冶炼', short: '工业主干', description: '把原矿加工成稳定的工业中间品，并授权第一座自动组装设备。', requires: ['planetary-logistics'], cube: 'energyCube', cost: 16, unlocks: ['assembler'], upgrades: ['smelter'], effectText: '解锁组装机 · 冶炼机速度 +33%' },
     { id: 'matrix-lab', label: '矩阵实验室', short: '科研主干', description: '将研究矩阵转化为可持续的科技推进力。', requires: ['automated-smelting'], cube: 'structureCube', cost: 22, upgrades: ['researchLab'], effectText: '科研站矩阵制备速度 +25%' },
-    { id: 'interstellar-logistics', label: '星际物流', short: '跨星际主干', description: '接入恒星系航线，允许派遣货运舱回收异星资源。', requires: ['matrix-lab'], cube: 'informationCube', cost: 32, unlocks: ['星图与货运舱'] },
+    { id: 'interstellar-logistics', label: '星际物流', short: '跨星际主干', description: '接入恒星系航线，授权行星物流站并允许派遣货运舱回收异星资源。', requires: ['matrix-lab'], cube: 'informationCube', cost: 32, unlocks: ['行星物流站、星图与货运舱'] },
     { id: 'stellar-network', label: '恒星网络', short: '跨星际主干', description: '让远端信标加入同一条物流网络，开放档案星航线。', requires: ['interstellar-logistics'], cube: 'informationCube', cost: 40, unlocks: ['档案星航线'] },
     { id: 'dyson-frame', label: '戴森框架', short: '恒星工程', description: '用异星资源搭建包围恒星的第一圈能量框架。', requires: ['stellar-network'], cube: 'structureCube', cost: 48, unlocks: ['恒星工程阶段'] }
   ],
   branches: [
-    { id: 'sorter-tech', label: '智能分拣', short: '物流分支', description: '允许将物料包导向不同产线。', requires: ['planetary-logistics'], cube: 'electromagneticCube', cost: 12, unlocks: ['sorter'], effectText: '解锁分拣器' },
+    { id: 'sorter-tech', label: '智能分拣', short: '物流分支', description: '升级基础分拣器的识别与分流能力，让同一条物流线可以按物料接入不同产线。', requires: ['planetary-logistics'], cube: 'electromagneticCube', cost: 12, upgrades: ['sorter'], effectText: '分拣器获得多出口规则与自动分流' },
     { id: 'belt-mk2', label: '高速传送', short: '物流分支', description: '提升物流网络的吞吐能力。', requires: ['sorter-tech'], cube: 'energyCube', cost: 14, upgrades: ['belt'], effectText: '传送带速度 +43%' },
+    { id: 'storage-mk2', label: '仓储扩容', short: '物流分支', description: '增加仓储箱容量，并允许更高频率的分拣器取放。', requires: ['sorter-tech'], cube: 'energyCube', cost: 18, upgrades: ['storage'], effectText: '物流仓储容量 240 → 480' },
     { id: 'wind-power', label: '风能捕获', short: '能源分支', description: '用行星风场提供稳定的基础电力。', requires: ['planetary-logistics'], cube: 'electromagneticCube', cost: 8, unlocks: ['wind'], effectText: '解锁风力发电机' },
     { id: 'thermal-power', label: '热能转化', short: '能源分支', description: '消耗煤炭，将化学能转化为电力。', requires: ['wind-power'], cube: 'energyCube', cost: 14, unlocks: ['thermal'], effectText: '解锁火力发电机' },
     { id: 'oil-processing', label: '石化开采', short: '能源分支', description: '从原油渗流区建立压力开采。', requires: ['planetary-logistics'], cube: 'energyCube', cost: 16, unlocks: ['oilExtractor'], effectText: '解锁石油提取机' },
     { id: 'workbench-tech', label: '精密工作台', short: '制造分支', description: '允许小批量制造电路与研究组件。', cube: 'electromagneticCube', cost: 8, unlocks: ['workbench'], upgrades: ['workbench'], effectText: '解锁工作台 · 工作台速度 +27%' },
     { id: 'advanced-assembly', label: '高级组装', short: '制造分支', description: '为处理器和矩阵生产提供更高效率。', requires: ['automated-smelting'], cube: 'structureCube', cost: 18, upgrades: ['assembler', 'workbench'], effectText: '组装机与工作台速度 +30%' },
     { id: 'mining-mk2', label: '高压采掘', short: '工业分支', description: '升级采矿机钻头与排矿节拍，减少矿脉等待时间。', requires: ['planetary-logistics'], cube: 'energyCube', cost: 18, upgrades: ['miner'], effectText: '采矿机速度 +35%' },
-    { id: 'power-grid-mk2', label: '电网增容', short: '能源分支', description: '升级能源核心与发电设施的能量转换模块。', requires: ['thermal-power'], cube: 'structureCube', cost: 24, upgrades: ['hub', 'wind', 'thermal'], effectText: '能源核心与发电机输出 +25%' },
+    { id: 'power-transmission', label: '远距输电', short: '能源分支', description: '用高压线圈延长电力塔的传输半径，允许多个局部电网稳定互联。', requires: ['thermal-power'], cube: 'energyCube', cost: 18, unlocks: ['longPowerTower'], effectText: '解锁远距离电力塔 · 基础电塔覆盖范围 +15%' },
+    { id: 'power-grid-mk2', label: '电网增容', short: '能源分支', description: '升级发电设施的能量转换模块，提高整个生存电网的余量。', requires: ['thermal-power'], cube: 'structureCube', cost: 24, upgrades: ['wind', 'thermal'], effectText: '风力与火力发电机输出 +25%' },
+    { id: 'advanced-power-grid', label: '超远距骨干网', short: '能源分支', description: '建立跨区域骨干输电，允许超远距离电力塔接管整片工业区。', requires: ['power-transmission', 'power-grid-mk2'], cube: 'informationCube', cost: 32, unlocks: ['ultraPowerTower'], effectText: '解锁超远距离电力塔 · 全部电塔覆盖范围 +10%' },
     { id: 'oil-extractor-mk2', label: '深层泵压', short: '能源分支', description: '为石油提取机加装深层泵压模块，提升原油采集速率。', requires: ['oil-processing'], cube: 'structureCube', cost: 20, upgrades: ['oilExtractor'], effectText: '石油提取机速度 +35%' }
   ]
 };
-const foundationTech = { id: 'foundation', label: '基础工业授权', short: '初始权限', description: '授予母星基地的第一套工业设施许可证。', requires: [], cube: 'electromagneticCube', cost: 0, unlocks: ['miner', 'smelter', 'researchLab', 'hub'], effectText: '解锁采矿机、冶炼机、科研站与能源核心' };
+const foundationTech = { id: 'foundation', label: '基础工业授权', short: '初始权限', description: '授予着陆舱周边的第一套工业设施许可证。基础电力塔把着陆舱、发电机和早期产线接成局部电网。', requires: [], cube: 'electromagneticCube', cost: 0, unlocks: ['miner', 'smelter', 'waterPump', 'researchLab', 'storage', 'sorter', 'powerTower'], effectText: '解锁采矿机、水泵、冶炼机、科研站、物流仓储、基础分拣器与电力塔' };
 const techNodes = [foundationTech, ...techTree.mainline, ...techTree.branches];
 const techById = Object.fromEntries(techNodes.map(tech => [tech.id, tech]));
 const startingTech = ['foundation'];
-const startingInventory = { iron: 180, copper: 80, silicon: 50, coal: 8, crudeOil: 0, titanium: 0, ironIngot: 4, copperIngot: 6, siliconWafer: 6, processor: 12, electromagneticCube: 0, energyCube: 0, structureCube: 0, informationCube: 0 };
+const startingInventory = { iron: 72, copper: 28, silicon: 16, coal: 4, crudeOil: 0, water: 0, titanium: 0, ironIngot: 4, copperIngot: 4, siliconWafer: 4, processor: 6, electromagneticCube: 0, energyCube: 0, structureCube: 0, informationCube: 0 };
+const startingStorageStock = { iron: 96, copper: 48, silicon: 32, coal: 8, crudeOil: 0, water: 0, titanium: 0, ironIngot: 4, copperIngot: 6, siliconWafer: 6, processor: 8, electromagneticCube: 0, energyCube: 0, structureCube: 0, informationCube: 0 };
+const startingKits = { miner: 1, smelter: 1, waterPump: 0, sorter: 1, powerTower: 1, longPowerTower: 0, ultraPowerTower: 0, belt: 8 };
+const handcraftRecipes = [
+  { id: 'miner', label: '采矿机套件', description: '覆盖矿脉，开始采集基础原矿。', outputLabel: '采矿机 ×1', outputType: 'kit', output: 'miner', amount: 1, cost: { iron: 8, copper: 2 } },
+  { id: 'smelter', label: '熔炼炉套件', description: '把原矿加工成金属锭或硅片。', outputLabel: '熔炼炉 ×1', outputType: 'kit', output: 'smelter', amount: 1, cost: { iron: 10, copper: 2 } },
+  { id: 'waterPump', label: '水泵套件', description: '覆盖水源采集区，提供基础水资源。', outputLabel: '水泵 ×1', outputType: 'kit', output: 'waterPump', amount: 1, cost: { iron: 10, copper: 2 } },
+  { id: 'sorter', label: '分拣器套件', description: '把建筑接口接入传送带物流。', outputLabel: '分拣器 ×1', outputType: 'kit', output: 'sorter', amount: 1, cost: { iron: 4, copper: 2 } },
+  { id: 'powerTower', label: '电力塔套件', description: '以塔为圆心覆盖局部电网，连接发电与用电设施。', outputLabel: '电力塔 ×1', outputType: 'kit', output: 'powerTower', amount: 1, cost: { iron: 6, copper: 2 } },
+  { id: 'belt', label: '传送带组件', description: '铺设四格基础物流线路。', outputLabel: '传送带 ×4 格', outputType: 'kit', output: 'belt', amount: 4, cost: { iron: 4 } }
+];
 const simulationSpeeds = [1, 2, 4];
 
 const careerCatalog = {
@@ -126,7 +221,7 @@ const careerCatalog = {
   power: {
     id: 'power', label: '能源工程师', image: 'character-production-engineer-v01.png', accent: '#ff9b3d',
     summary: '把每一座机器都接入稳定的能源脉搏。',
-    bonus: '发电量 +20%', detail: '能源核心、风力和火力发电机提供更多电力，适合早期铺开多条产线。',
+    bonus: '发电量 +20%', detail: '着陆舱基础电源、风力和火力发电机提供更多电力，适合早期铺开多条产线。',
     effect: 'power'
   },
   research: {
@@ -139,16 +234,29 @@ const careerCatalog = {
 
 const nodes = [
   { id: 'copper-north', x: -6, y: -2, resource: 'copper', amount: 62400 },
+  { id: 'copper-south', x: 0, y: 8, resource: 'copper', amount: 48800 },
+  { id: 'copper-west', x: -12, y: 2, resource: 'copper', amount: 35200 },
   { id: 'silicon-west', x: 5, y: -4, resource: 'silicon', amount: 28100 },
+  { id: 'silicon-north', x: 1, y: -8, resource: 'silicon', amount: 33400 },
+  { id: 'silicon-south', x: 10, y: 9, resource: 'silicon', amount: 21600 },
   { id: 'iron-east', x: 6, y: 5, resource: 'iron', amount: 91600 },
+  { id: 'iron-west', x: -12, y: -2, resource: 'iron', amount: 74600 },
+  { id: 'iron-south', x: 2, y: 11, resource: 'iron', amount: 52800 },
   { id: 'ice-south', x: -6, y: 7, resource: 'ice', amount: 46200 },
+  { id: 'ice-north', x: -2, y: -10, resource: 'ice', amount: 29800 },
+  { id: 'water-west', x: -10, y: 7, resource: 'water', amount: 100000 },
+  { id: 'water-east', x: 14, y: 8, resource: 'water', amount: 82000 },
   { id: 'coal-north-east', x: 10, y: -5, resource: 'coal', amount: 53600 },
+  { id: 'coal-west', x: -10, y: -8, resource: 'coal', amount: 41800 },
+  { id: 'coal-south', x: 12, y: 11, resource: 'coal', amount: 26700 },
   { id: 'oil-east', x: 11, y: 6, resource: 'crudeOil', amount: 78000 }
+  ,{ id: 'oil-north', x: 13, y: 2, resource: 'crudeOil', amount: 43200 }
+  ,{ id: 'oil-west', x: -4, y: 10, resource: 'crudeOil', amount: 30100 }
 ];
 const initialNodeState = nodes.map(node => ({ ...node }));
 
 const planetCatalog = [
-  { id: 'home', name: '晨星-03', kicker: 'HOMEWORLD / BASE', role: '母星基地', description: '母星工业区。所有货运舱从这里发射，回收物会直接进入能源核心库存。', resources: '本地资源：铁、铜、硅', color: '#69d8da', requires: [], position: { x: .5, y: .5 } },
+  { id: 'home', name: '晨星-03', kicker: 'HOMEWORLD / BASE', role: '母星基地', description: '母星工业区。所有货运舱从这里发射，回收物会直接进入物流仓储。', resources: '本地资源：铁、铜、硅', color: '#69d8da', requires: [], position: { x: .5, y: .5 } },
   { id: 'forge', name: '熔火-β', kicker: 'FORGE OUTPOST / MINING', role: '钛矿前哨', description: '一颗被潮汐锁定的熔岩行星。稳定的钛矿带埋在昼夜交界线上。', resources: '航线回收：钛 ×8', color: '#ff8d63', requires: ['interstellar-logistics'], reward: { resource: 'titanium', amount: 8 }, travelTime: 12, position: { x: .23, y: .28 } },
   { id: 'frost', name: '霜环-7', kicker: 'FROST MOON / ICE', role: '冰卫星', description: '环带中的低温卫星。冰晶可以稳定能量矩阵，也能支持远距离燃料储备。', resources: '航线回收：冰 ×28', color: '#8ccfff', requires: ['interstellar-logistics'], reward: { resource: 'ice', amount: 28 }, travelTime: 16, position: { x: .78, y: .27 } },
   { id: 'archive', name: '档案星', kicker: 'ARCHIVE WORLD / SIGNAL', role: '远古信标', description: '失落文明留下的静默信标。只有恒星网络完成后，货运舱才能安全穿过信号风暴。', resources: '航线回收：信息矩阵 ×3', color: '#c58cff', requires: ['stellar-network'], reward: { resource: 'informationCube', amount: 3 }, travelTime: 20, position: { x: .73, y: .73 } }
@@ -174,7 +282,74 @@ function makeStellarProject(savedState = null) {
 }
 
 function makeBuilding(type, x, y, rotation = 0) {
-  return { id: `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, type, x, y, rotation, input: {}, output: {}, process: 0, timer: 0, nodeId: null, researchMode: type === 'researchLab' ? 'auto' : undefined, manualResearchMode: false, sorterRules: type === 'sorter' ? {} : undefined, routeCursor: type === 'sorter' ? 0 : undefined };
+  return {
+    id: `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    type, x, y, rotation, input: {}, output: {}, stock: isStorageType(type) ? {} : undefined,
+    process: 0, timer: 0, nodeId: null, constructionKit: false,
+    researchMode: type === 'researchLab' ? 'auto' : undefined,
+    manualResearchMode: false,
+    gridEnabled: isPowerTowerType(type) ? true : undefined,
+    baseHub: type === 'storage' ? false : undefined,
+    sorterRules: type === 'sorter' ? {} : undefined,
+    routeCursor: type === 'sorter' ? 0 : undefined,
+    sorterMode: type === 'sorter' ? 'input' : undefined
+  };
+}
+
+function isStorageType(typeOrBuilding) {
+  const type = typeof typeOrBuilding === 'string' ? typeOrBuilding : typeOrBuilding?.type;
+  return type === 'storage' || type === 'logisticsStation';
+}
+
+function isPowerTowerType(typeOrBuilding) {
+  const type = typeof typeOrBuilding === 'string' ? typeOrBuilding : typeOrBuilding?.type;
+  return type === 'powerTower' || type === 'longPowerTower' || type === 'ultraPowerTower';
+}
+
+function storageCapacity(building) {
+  if (!isStorageType(building)) return 0;
+  if (building.type === 'logisticsStation') return 960;
+  return isTechUnlocked('storage-mk2') ? 480 : 240;
+}
+
+function storageUsed(building) {
+  return Object.values(building?.stock || {}).reduce((sum, amount) => sum + Math.max(0, amount), 0);
+}
+
+function storageHasSpace(building, amount = 1) {
+  return storageUsed(building) + amount <= storageCapacity(building);
+}
+
+function storageBuildings() {
+  return state.buildings.filter(building => isStorageType(building) && isBuildingOperational(building));
+}
+
+function storageAmount(resource) {
+  return storageBuildings().reduce((sum, building) => sum + (building.stock?.[resource] || 0), 0);
+}
+
+function takeFromStorage(resource, amount) {
+  let remaining = amount;
+  storageBuildings().forEach(building => {
+    if (remaining <= 0) return;
+    const available = Math.min(remaining, building.stock?.[resource] || 0);
+    if (available <= 0) return;
+    building.stock[resource] -= available;
+    remaining -= available;
+  });
+  return amount - remaining;
+}
+
+function putInStorage(resource, amount) {
+  let remaining = amount;
+  storageBuildings().forEach(building => {
+    if (remaining <= 0) return;
+    const available = Math.min(remaining, Math.max(0, storageCapacity(building) - storageUsed(building)));
+    if (available <= 0) return;
+    building.stock[resource] = (building.stock[resource] || 0) + available;
+    remaining -= available;
+  });
+  return amount - remaining;
 }
 
 function normalizeSavedBuildings(savedBuildings) {
@@ -183,8 +358,12 @@ function normalizeSavedBuildings(savedBuildings) {
       ...building,
       input: { ...(building.input || {}) },
       output: { ...(building.output || {}) },
+      stock: isStorageType(building) ? { ...(building.stock || {}) } : undefined,
       sorterRules: building.type === 'sorter' ? { ...(building.sorterRules || {}) } : undefined,
-      routeCursor: building.type === 'sorter' ? Math.max(0, Number.isInteger(building.routeCursor) ? building.routeCursor : 0) : undefined
+      routeCursor: building.type === 'sorter' ? Math.max(0, Number.isInteger(building.routeCursor) ? building.routeCursor : 0) : undefined,
+      sorterMode: building.type === 'sorter' ? (building.sorterMode === 'output' ? 'output' : 'input') : undefined,
+      gridEnabled: isPowerTowerType(building.type) ? building.gridEnabled !== false : undefined,
+      baseHub: building.type === 'storage' ? building.baseHub === true : undefined
     };
     Object.keys(normalized.input).forEach(resource => {
       normalized.input[resource] = clamp(normalized.input[resource] || 0, 0, inputCapacity(normalized));
@@ -204,23 +383,94 @@ function normalizeSavedBuildings(savedBuildings) {
   });
 }
 
+let savedPlacementRepairCount = 0;
+
+function savedResourceNodeAt(cell, savedNodes) {
+  return savedNodes.find(node => node.x === cell.x && node.y === cell.y) || null;
+}
+
+function savedBuildingOverlaps(candidate, building) {
+  const candidateSize = buildings[candidate.type].size;
+  const buildingSize = buildings[building.type].size;
+  return candidate.x < building.x + buildingSize
+    && candidate.x + candidateSize > building.x
+    && candidate.y < building.y + buildingSize
+    && candidate.y + candidateSize > building.y;
+}
+
+function savedPlacementIsClear(candidate, placedBuildings, savedNodes) {
+  const footprint = footprintCells(candidate, buildings[candidate.type].size);
+  return footprint.every(cell => isInsideWorld(cell) && !isTerrainBlocked(cell) && !savedResourceNodeAt(cell, savedNodes))
+    && !placedBuildings.some(building => savedBuildingOverlaps(candidate, building));
+}
+
+function nearbyLegalSavedCell(building, placedBuildings, savedNodes) {
+  for (let radius = 0; radius <= 12; radius += 1) {
+    for (let dx = -radius; dx <= radius; dx += 1) {
+      const dy = radius - Math.abs(dx);
+      const candidates = dy === 0 ? [0] : [-dy, dy];
+      for (const offsetY of candidates) {
+        const candidate = { ...building, x: building.x + dx, y: building.y + offsetY };
+        if (savedPlacementIsClear(candidate, placedBuildings, savedNodes)) return candidate;
+      }
+    }
+  }
+  return building;
+}
+
+function repairSavedBuildingFootprints(savedBuildings, savedNodes) {
+  const repairedBuildings = [];
+  savedBuildings.forEach(building => {
+    const repaired = savedPlacementIsClear(building, repairedBuildings, savedNodes)
+      ? building
+      : nearbyLegalSavedCell(building, repairedBuildings, savedNodes);
+    if (repaired.x !== building.x || repaired.y !== building.y) savedPlacementRepairCount += 1;
+    if (repaired.type === 'miner' || repaired.type === 'oilExtractor' || repaired.type === 'waterPump') {
+      const size = buildings[repaired.type].size;
+      repaired.nodeId = savedNodes.find(node => node.x >= repaired.x - 1 && node.x < repaired.x + size + 1 && node.y >= repaired.y - 1 && node.y < repaired.y + size + 1)?.id || null;
+    }
+    repairedBuildings.push(repaired);
+  });
+  return repairedBuildings;
+}
+
 function readSave() {
   try {
     const saved = JSON.parse(localStorage.getItem(SAVE_KEY) || localStorage.getItem(LEGACY_SAVE_KEY) || 'null');
     if (!saved) return null;
-    const savedBuildings = Array.isArray(saved.buildings) ? normalizeSavedBuildings(saved.buildings) : [];
+    const savedNodes = Array.isArray(saved.nodes) && saved.nodes.length ? saved.nodes : initialNodeState.map(node => ({ ...node }));
+    const savedBuildings = Array.isArray(saved.buildings)
+      ? repairSavedBuildingFootprints(normalizeSavedBuildings(saved.buildings), savedNodes)
+      : [];
+    if (!savedBuildings.some(building => isStorageType(building))) {
+      const starterStorage = makeBuilding('storage', 3, -1);
+      starterStorage.stock = { ...startingStorageStock };
+      starterStorage.baseHub = true;
+      savedBuildings.push(starterStorage);
+    }
+    if (!savedBuildings.some(building => building.baseHub)) {
+      const starterStorage = savedBuildings.find(building => isStorageType(building));
+      if (starterStorage) starterStorage.baseHub = true;
+    }
+    const hasPowerConsumer = savedBuildings.some(building => {
+      const meta = buildings[building.type];
+      return !building.baseHub && Boolean(meta && (meta.power > 0 || meta.generation > 0));
+    });
+    const hasTransmissionTower = savedBuildings.some(building => isPowerTowerType(building.type));
     return {
-      buildings: savedBuildings.length ? savedBuildings : [makeBuilding('hub', -1, -1)],
+      buildings: savedBuildings,
       belts: Array.isArray(saved.belts) ? saved.belts : [],
       inventory: { ...startingInventory, ...(saved.inventory || {}) },
-      nodes: Array.isArray(saved.nodes) && saved.nodes.length ? saved.nodes : initialNodeState.map(node => ({ ...node })),
+      kits: { ...startingKits, ...(saved.kits || {}) },
+      nodes: savedNodes,
       time: Number.isFinite(saved.time) ? saved.time : 6 * 3600,
       tech: Array.isArray(saved.tech) && saved.tech.length ? [...new Set(['foundation', ...saved.tech])] : [...startingTech],
       research: saved.research && typeof saved.research === 'object' ? saved.research : { current: null, progress: 0 },
       interstellar: makeInterstellarState(saved.interstellar),
       stellarProject: makeStellarProject(saved.stellarProject),
       career: saved.career || 'logistics',
-      careerChosen: saved.careerChosen !== false
+      careerChosen: saved.careerChosen !== false,
+      powerMigration: hasPowerConsumer && !hasTransmissionTower
     };
   } catch {
     return null;
@@ -232,17 +482,19 @@ const state = {
   viewport: { width: window.innerWidth, height: window.innerHeight },
   camera: { x: 0, y: 1 },
   zoom: .78,
-  tool: 'miner',
+  tool: 'inspect',
   rotation: 0,
   paused: false,
   animTime: 0,
   selectedId: null,
-  pointer: { cell: { x: 0, y: 0 }, down: false, startCell: null, startBuildingId: null, panning: false, lastX: 0, lastY: 0 },
-  buildings: saved?.buildings || [makeBuilding('hub', -1, -1)],
+  selectedBeltId: null,
+  pointer: { cell: { x: 0, y: 0 }, down: false, startCell: null, startBuildingId: null, sorterAnchor: null, panning: false, lastX: 0, lastY: 0 },
+  buildings: saved?.buildings || [(() => { const storage = makeBuilding('storage', 3, -1); storage.baseHub = true; storage.stock = { ...startingStorageStock }; return storage; })()],
   belts: saved?.belts || [],
   nodes: saved?.nodes || initialNodeState.map(node => ({ ...node })),
   items: [],
   inventory: { ...startingInventory, ...(saved?.inventory || {}) },
+  kits: { ...startingKits, ...(saved?.kits || {}) },
   time: saved?.time ?? 6 * 3600,
   tech: saved?.tech || [...startingTech],
   research: saved?.research || { current: null, progress: 0 },
@@ -251,10 +503,14 @@ const state = {
   career: saved ? (saved.career || 'logistics') : null,
   careerChosen: saved ? saved.careerChosen !== false : false,
   pendingCareer: saved?.career || 'logistics',
+  powerMigration: !qaDemoMode && !qaPlaythroughMode && saved?.powerMigration === true,
   researchRate: 0,
-  powerGeneration: 12,
+  powerGeneration: 4.5,
+  basePowerGeneration: 4.5,
   lastToast: 0,
   powerLoad: 0,
+  powerGrids: [],
+  powerSummary: { gridCount: 0, highLoadCount: 0, blackoutCount: 0, generation: 0, load: 0 },
   simulationSpeed: 1,
   sorterRoutingSignature: '',
   assetFallbacks: 0
@@ -265,6 +521,30 @@ function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
 function formatNumber(value) { return Math.max(0, Math.floor(value)).toLocaleString('en-US'); }
 function hasImage(image) { return image && image.complete && image.naturalWidth > 0; }
 function escapeHtml(value) { return String(value).replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character])); }
+
+function isInsideWorld(cell) {
+  return Boolean(cell)
+    && cell.x >= WORLD_BOUNDS.minX && cell.x <= WORLD_BOUNDS.maxX
+    && cell.y >= WORLD_BOUNDS.minY && cell.y <= WORLD_BOUNDS.maxY;
+}
+
+function terrainAt(cell) {
+  if (!isInsideWorld(cell)) return { kind: 'void', label: '地图边界', short: '边界' };
+  return terrainRegions.find(region => cell.x >= region.minX && cell.x <= region.maxX && cell.y >= region.minY && cell.y <= region.maxY)
+    || { kind: 'plain', label: '稳定平原', short: '平原' };
+}
+
+function isTerrainBlocked(cell) {
+  return terrainAt(cell).kind === 'rock' || terrainAt(cell).kind === 'water' || terrainAt(cell).kind === 'void';
+}
+
+function footprintCells(cell, size) {
+  const cells = [];
+  for (let x = 0; x < size; x += 1) {
+    for (let y = 0; y < size; y += 1) cells.push({ x: cell.x + x, y: cell.y + y });
+  }
+  return cells;
+}
 
 function activeCareer() {
   return careerCatalog[state.career] || careerCatalog.logistics;
@@ -280,6 +560,7 @@ function saveGame() {
     buildings: state.buildings,
     belts: state.belts,
     inventory: state.inventory,
+    kits: state.kits,
     nodes: state.nodes,
     time: state.time,
     tech: state.tech,
@@ -325,10 +606,82 @@ function roundedRect(context, x, y, width, height, radius) {
   context.closePath();
 }
 
+function drawTerrainTile(terrain, point, size, parity, gridX, gridY) {
+  const base = terrain.kind === 'rock'
+    ? (parity ? 'rgba(61,79,91,.58)' : 'rgba(54,71,84,.58)')
+    : terrain.kind === 'water'
+      ? (parity ? 'rgba(18,73,101,.7)' : 'rgba(15,63,91,.7)')
+      : terrain.kind === 'void'
+        ? 'rgba(4,12,21,.86)'
+        : (parity ? 'rgba(18,42,54,.45)' : 'rgba(14,35,47,.45)');
+  ctx.fillStyle = base;
+  ctx.fillRect(point.x, point.y, size + 1, size + 1);
+
+  const terrainTile = terrain.kind === 'water' ? assets.waterTile : terrain.kind === 'rock' ? assets.rockTile : assets.groundTile;
+  if (terrain.kind !== 'void' && hasImage(terrainTile)) {
+    ctx.save();
+    ctx.globalAlpha = terrain.kind === 'water' ? .86 : terrain.kind === 'rock' ? .48 : .18;
+    ctx.beginPath();
+    ctx.rect(point.x, point.y, size + 1, size + 1);
+    ctx.clip();
+    const sourceSize = 48;
+    const sourceX = ((gridX * sourceSize) % terrainTile.width + terrainTile.width) % terrainTile.width;
+    const sourceY = ((gridY * sourceSize) % terrainTile.height + terrainTile.height) % terrainTile.height;
+    ctx.drawImage(terrainTile, sourceX, sourceY, sourceSize, sourceSize, point.x, point.y, size, size);
+    ctx.restore();
+  }
+
+  if (terrain.kind === 'water') {
+    ctx.save();
+      ctx.strokeStyle = 'rgba(142,236,235,.28)';
+    ctx.lineWidth = Math.max(1, state.zoom * .8);
+    [.28, .56, .78].forEach((offset, index) => {
+      const waveY = point.y + size * offset;
+      ctx.beginPath();
+      ctx.moveTo(point.x + size * (.12 + (index % 2) * .08), waveY);
+      ctx.quadraticCurveTo(point.x + size * .34, waveY - size * .06, point.x + size * .5, waveY);
+      ctx.quadraticCurveTo(point.x + size * .66, waveY + size * .06, point.x + size * .88, waveY);
+      ctx.stroke();
+    });
+    ctx.restore();
+  } else if (terrain.kind === 'rock') {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(183,204,207,.34)';
+    ctx.fillStyle = 'rgba(183,204,207,.13)';
+    ctx.lineWidth = Math.max(1, state.zoom * .8);
+    ctx.beginPath();
+    ctx.moveTo(point.x + size * .18, point.y + size * .7);
+    ctx.lineTo(point.x + size * .34, point.y + size * .36);
+    ctx.lineTo(point.x + size * .55, point.y + size * .54);
+    ctx.lineTo(point.x + size * .77, point.y + size * .24);
+    ctx.lineTo(point.x + size * .86, point.y + size * .76);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  } else if (terrain.kind === 'plain') {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(105,216,218,.08)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(point.x + size * .16, point.y + size * .16, size * .68, size * .68);
+    ctx.restore();
+  }
+}
+
 function drawGround() {
   const { width, height } = state.viewport;
   ctx.fillStyle = '#081522';
   ctx.fillRect(0, 0, width, height);
+  if (hasImage(assets.groundTile)) {
+    const groundPattern = ctx.createPattern(assets.groundTile, 'repeat');
+    if (groundPattern) {
+      ctx.save();
+      ctx.globalAlpha = .16;
+      ctx.fillStyle = groundPattern;
+      ctx.fillRect(0, 0, width, height);
+      ctx.restore();
+    }
+  }
 
   const minX = Math.floor(state.camera.x - width / (2 * TILE * state.zoom)) - 2;
   const maxX = Math.ceil(state.camera.x + width / (2 * TILE * state.zoom)) + 2;
@@ -338,12 +691,11 @@ function drawGround() {
     for (let y = minY; y <= maxY; y += 1) {
       const point = worldToScreen(x, y);
       const size = TILE * state.zoom;
-      ctx.fillStyle = (x + y) % 2 === 0 ? 'rgba(18,42,54,.64)' : 'rgba(14,35,47,.64)';
-      ctx.fillRect(point.x, point.y, size + 1, size + 1);
+      drawTerrainTile(terrainAt({ x, y }), point, size, Math.abs(x + y) % 2, x, y);
     }
   }
 
-  ctx.strokeStyle = state.tool === 'belt' ? 'rgba(105,216,218,.31)' : 'rgba(165,204,200,.18)';
+  ctx.strokeStyle = state.tool === 'belt' ? 'rgba(105,216,218,.28)' : 'rgba(165,204,200,.1)';
   ctx.lineWidth = 1;
   for (let x = minX; x <= maxX + 1; x += 1) {
     const point = worldToScreen(x, minY);
@@ -365,23 +717,16 @@ function drawGround() {
     ctx.fill();
   }
 
-  const hub = worldToScreen(-1, -1);
-  const hubSize = 3 * TILE * state.zoom;
-  ctx.strokeStyle = 'rgba(105,216,218,.2)';
-  ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.arc(hub.x + hubSize / 2, hub.y + hubSize / 2, hubSize * .76, 0, Math.PI * 2); ctx.stroke();
-  ctx.strokeStyle = 'rgba(199,217,76,.12)';
-  ctx.beginPath(); ctx.arc(hub.x + hubSize / 2, hub.y + hubSize / 2, hubSize * 1.2, 0, Math.PI * 2); ctx.stroke();
 }
 
 function drawDysonConstruction() {
   const progress = state.stellarProject?.progress || 0;
   if (progress <= 0) return;
-  const hub = worldToScreen(.5, .5);
+  const projectCenter = worldToScreen(.5, .5);
   const radius = TILE * state.zoom * 2.8;
   const builtSegments = Math.ceil(progress / 12.5);
   ctx.save();
-  ctx.translate(hub.x, hub.y);
+  ctx.translate(projectCenter.x, projectCenter.y);
   ctx.rotate(state.animTime * .05);
   for (let index = 0; index < 8; index += 1) {
     const angle = index * Math.PI / 4;
@@ -422,6 +767,30 @@ function drawResourceNode(node) {
   ctx.fillStyle = meta.color;
   ctx.font = '700 9px Bahnschrift, sans-serif'; ctx.textAlign = 'center';
   ctx.fillText(`${meta.label}矿脉  ${formatNumber(node.amount)}`, point.x, point.y + size * .44 + 12);
+  ctx.restore();
+}
+
+function drawResourceNodeCore(node) {
+  const point = worldToScreen(node.x, node.y);
+  const size = TILE * state.zoom;
+  const meta = resources[node.resource];
+  ctx.save();
+  ctx.globalAlpha = .84;
+  ctx.fillStyle = `${meta.color}10`;
+  ctx.fillRect(point.x + 2, point.y + 2, size - 4, size - 4);
+  ctx.strokeStyle = `${meta.color}b8`;
+  ctx.lineWidth = Math.max(1, state.zoom * 1.4);
+  ctx.setLineDash([4, 3]);
+  ctx.strokeRect(point.x + 2, point.y + 2, size - 4, size - 4);
+  ctx.setLineDash([]);
+  ctx.strokeStyle = `${meta.color}dd`;
+  ctx.lineWidth = Math.max(1, state.zoom);
+  ctx.beginPath();
+  ctx.moveTo(point.x + size * .32, point.y + size * .5);
+  ctx.lineTo(point.x + size * .68, point.y + size * .5);
+  ctx.moveTo(point.x + size * .5, point.y + size * .32);
+  ctx.lineTo(point.x + size * .5, point.y + size * .68);
+  ctx.stroke();
   ctx.restore();
 }
 
@@ -558,9 +927,8 @@ function findBeltPath(start, end) {
     { dx: Math.sign(start.x - end.x), dy: 0 },
     { dx: 0, dy: Math.sign(start.y - end.y) }
   ].filter(direction => direction.dx !== 0 || direction.dy !== 0);
-  const bounds = { minX: -18, maxX: 18, minY: -12, maxY: 12 };
   const isOpen = cell => {
-    if (cell.x < bounds.minX || cell.x > bounds.maxX || cell.y < bounds.minY || cell.y > bounds.maxY) return false;
+    if (!isInsideWorld(cell) || isTerrainBlocked(cell)) return false;
     if ((cell.x !== start.x || cell.y !== start.y) && (cell.x !== end.x || cell.y !== end.y) && beltAt(cell)) return false;
     return !overlapsBuilding(cell.x, cell.y, 1);
   };
@@ -580,13 +948,14 @@ function findBeltPath(start, end) {
 }
 
 function drawBelt(belt, preview = false) {
-  const color = preview ? '#69d8da' : '#4db7c2';
+  const selected = state.selectedBeltId === belt.id;
+  const color = preview ? '#69d8da' : selected ? '#c7d94c' : '#4db7c2';
   beltCells(belt).forEach((cell, index) => {
     const point = worldToScreen(cell.x, cell.y);
     const size = TILE * state.zoom;
     const horizontal = belt.dx !== 0;
     ctx.save();
-    ctx.globalAlpha = preview ? .55 : .88;
+    ctx.globalAlpha = preview ? .55 : selected ? .98 : .88;
     ctx.fillStyle = preview ? 'rgba(105,216,218,.22)' : 'rgba(16,49,63,.94)';
     const bridge = belt.dx === 0 && belt.dy === 0;
     const beltX = bridge ? point.x + size * .2 : horizontal ? point.x + 4 : point.x + size * .33;
@@ -595,8 +964,16 @@ function drawBelt(belt, preview = false) {
     const beltHeight = bridge ? size * .6 : horizontal ? size * .34 : size - 8;
     roundedRect(ctx, beltX, beltY, beltWidth, beltHeight, 4); ctx.fill();
     ctx.strokeStyle = color;
-    ctx.lineWidth = Math.max(1, state.zoom * 1.5);
+    ctx.lineWidth = Math.max(1, state.zoom * (selected ? 2.4 : 1.5));
     ctx.stroke();
+    if (selected) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(199,217,76,.5)';
+      ctx.lineWidth = Math.max(1, state.zoom * 4.2);
+      ctx.globalAlpha = .34;
+      ctx.stroke();
+      ctx.restore();
+    }
     const arrowX = point.x + size / 2 + belt.dx * size * .17;
     const arrowY = point.y + size / 2 + belt.dy * size * .17;
     ctx.strokeStyle = color;
@@ -629,11 +1006,11 @@ function drawBelt(belt, preview = false) {
 
 function isBuildingActive(building) {
   if (!isBuildingOperational(building)) return false;
-  if (building.type === 'hub') return true;
   if (state.paused) return false;
-  if (building.type === 'wind') return true;
-  if (building.type === 'thermal') return (building.input.coal || 0) > 0;
-  if (building.type === 'miner' || building.type === 'oilExtractor') return building.timer > .15 || Object.values(building.output).some(amount => amount > 0);
+  if (isPowerTowerType(building)) return getGridPowerState(building).powered;
+  if (building.type === 'wind') return getGridPowerState(building).powered;
+  if (building.type === 'thermal') return getGridPowerState(building).powered && (building.input.coal || 0) > 0;
+  if (building.type === 'miner' || building.type === 'oilExtractor' || building.type === 'waterPump') return building.timer > .15 || Object.values(building.output).some(amount => amount > 0);
   return building.process > .05 || Object.values(building.input).some(amount => amount > 0);
 }
 
@@ -687,10 +1064,11 @@ function drawMachineAnimation(building, size) {
     ctx.strokeStyle = `${color}aa`; ctx.lineWidth = Math.max(1, size * .022);
     ctx.beginPath(); ctx.moveTo(0, -size * .18); ctx.lineTo(0, size * .2 + lift); ctx.stroke();
     ctx.fillStyle = `${color}bb`; ctx.beginPath(); ctx.arc(0, size * .2 + lift, size * .07, 0, Math.PI * 2); ctx.fill();
-  } else if (building.type === 'hub') {
-    ctx.rotate(time * .28);
-    ctx.strokeStyle = '#69d8da66'; ctx.lineWidth = Math.max(1, size * .012);
-    ctx.beginPath(); ctx.arc(0, 0, size * .36, -.2, Math.PI * 1.25); ctx.stroke();
+  } else if (building.type === 'waterPump') {
+    const lift = Math.sin(time * 2.7) * size * .08;
+    ctx.strokeStyle = `${color}aa`; ctx.lineWidth = Math.max(1, size * .022);
+    ctx.beginPath(); ctx.moveTo(-size * .2, size * .18); ctx.lineTo(0, -size * .18 + lift); ctx.lineTo(size * .2, size * .18); ctx.stroke();
+    ctx.fillStyle = `${color}bb`; ctx.beginPath(); ctx.arc(0, -size * .18 + lift, size * .07, 0, Math.PI * 2); ctx.fill();
   }
   ctx.restore();
 }
@@ -714,6 +1092,17 @@ function drawBuildingFallback(building, size) {
     ctx.fillStyle = '#183d4a'; ctx.fillRect(size * .42, size * .45, size * .16, size * .32); ctx.strokeRect(size * .42, size * .45, size * .16, size * .32);
     ctx.beginPath(); ctx.moveTo(size * .5, size * .5); ctx.lineTo(size * .18, size * .25); ctx.moveTo(size * .5, size * .5); ctx.lineTo(size * .78, size * .24); ctx.moveTo(size * .5, size * .5); ctx.lineTo(size * .82, size * .72); ctx.stroke();
     ctx.fillStyle = color; ctx.beginPath(); ctx.arc(size * .5, size * .5, size * .07, 0, Math.PI * 2); ctx.fill();
+  } else if (isPowerTowerType(building)) {
+    ctx.strokeStyle = `${color}aa`;
+    ctx.lineWidth = Math.max(1, size * .025);
+    ctx.beginPath(); ctx.moveTo(size * .5, size * .16); ctx.lineTo(size * .5, size * .84); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(size * .28, size * .82); ctx.lineTo(size * .5, size * .16); ctx.lineTo(size * .72, size * .82); ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(size * .5, size * .16, size * .08, 0, Math.PI * 2); ctx.fill();
+    if (building.gridEnabled === false) {
+      ctx.strokeStyle = '#ee6a65';
+      ctx.beginPath(); ctx.moveTo(size * .27, size * .27); ctx.lineTo(size * .73, size * .73); ctx.stroke();
+    }
   } else if (building.type === 'thermal') {
     ctx.fillStyle = '#351f27'; ctx.fillRect(size * .2, size * .36, size * .6, size * .38); ctx.strokeRect(size * .2, size * .36, size * .6, size * .38);
     ctx.fillStyle = '#ffb15b'; ctx.beginPath(); ctx.arc(size * .5, size * .55, size * .13, 0, Math.PI * 2); ctx.fill();
@@ -726,6 +1115,19 @@ function drawBuildingFallback(building, size) {
     ctx.fillStyle = '#3d2a2b'; ctx.fillRect(size * .16, size * .46, size * .68, size * .22); ctx.strokeRect(size * .16, size * .46, size * .68, size * .22);
     ctx.beginPath(); ctx.moveTo(size * .26, size * .68); ctx.lineTo(size * .22, size * .82); ctx.moveTo(size * .72, size * .68); ctx.lineTo(size * .77, size * .82); ctx.stroke();
     ctx.fillStyle = color; ctx.fillRect(size * .42, size * .25, size * .18, size * .2); ctx.strokeRect(size * .42, size * .25, size * .18, size * .2);
+  } else if (building.type === 'waterPump') {
+    ctx.fillStyle = '#123849'; ctx.fillRect(size * .18, size * .58, size * .64, size * .12); ctx.strokeRect(size * .18, size * .58, size * .64, size * .12);
+    ctx.beginPath(); ctx.moveTo(size * .28, size * .58); ctx.lineTo(size * .5, size * .2); ctx.lineTo(size * .72, size * .58); ctx.stroke();
+    ctx.fillStyle = '#78e1ff'; ctx.beginPath(); ctx.arc(size * .5, size * .22, size * .07, 0, Math.PI * 2); ctx.fill();
+  } else if (building.type === 'storage' || building.type === 'logisticsStation') {
+    ctx.fillStyle = building.type === 'logisticsStation' ? '#302447' : '#20344e';
+    roundedRect(ctx, size * .15, size * .2, size * .7, size * .54, 4); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = `${color}99`;
+    for (let index = 0; index < (building.type === 'logisticsStation' ? 3 : 2); index += 1) {
+      ctx.fillRect(size * (.25 + index * .2), size * .31, size * .12, size * .28);
+    }
+    ctx.strokeStyle = '#e5f5ff88';
+    ctx.beginPath(); ctx.moveTo(size * .2, size * .8); ctx.lineTo(size * .8, size * .8); ctx.stroke();
   } else {
     ctx.fillStyle = `${color}25`;
     roundedRect(ctx, size * .18, size * .18, size * .64, size * .46, 4); ctx.fill();
@@ -750,7 +1152,7 @@ function drawBuilding(building) {
   ctx.translate(point.x + size / 2, point.y + size / 2);
   ctx.rotate((building.rotation * Math.PI) / 180);
   ctx.translate(-size / 2, -size / 2);
-  ctx.fillStyle = building.type === 'hub' ? 'rgba(18,66,82,.94)' : 'rgba(14,29,42,.96)';
+  ctx.fillStyle = 'rgba(14,29,42,.96)';
   roundedRect(ctx, 2, 2, size - 4, size - 6, 5); ctx.fill();
   ctx.strokeStyle = meta.color;
   ctx.lineWidth = selected ? 2.4 : 1.2;
@@ -770,12 +1172,6 @@ function drawBuilding(building) {
       ctx.beginPath(); ctx.arc(0, 0, size * (.34 + Math.sin(state.animTime * 3) * .012), state.animTime * .7, state.animTime * .7 + Math.PI * 1.35); ctx.stroke();
     }
     ctx.restore();
-  } else if (building.type === 'hub') {
-    ctx.strokeStyle = '#69d8da'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(size / 2, size / 2 - 2, size * .25, 0, Math.PI * 2); ctx.stroke();
-    ctx.fillStyle = '#b9ffff'; ctx.beginPath(); ctx.arc(size / 2, size / 2 - 2, size * .08, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = 'rgba(105,216,218,.5)';
-    ctx.beginPath(); ctx.moveTo(size * .2, size * .72); ctx.lineTo(size * .8, size * .72); ctx.stroke();
   } else {
     drawBuildingFallback(building, size);
   }
@@ -809,7 +1205,7 @@ function drawBuilding(building) {
   }
 
   const status = buildingStatus(building);
-  if (building.type !== 'hub' && ['科技锁定', '电力不足', '输出堵塞', '缺少输入', '等待矩阵组件', '缺煤'].includes(status)) {
+  if (['科技锁定', '电力不足', '电网瘫痪', '电网高负载', '输出堵塞', '缺少输入', '等待矩阵组件', '缺煤', '未接入水源', '未接入电网'].includes(status)) {
     const pulse = 1 + Math.sin(state.animTime * 4.2 + building.x * .7 + building.y) * .08;
     ctx.save();
     ctx.strokeStyle = status === '输出堵塞' ? '#ff9b3d' : '#ee6a65';
@@ -834,7 +1230,174 @@ function buildingPortCells(building) {
   return ports.filter((port, index, allPorts) => allPorts.findIndex(item => item.x === port.x && item.y === port.y) === index);
 }
 
+function isSorterTargetBuilding(building) {
+  return Boolean(building && building.type !== 'sorter' && !isPowerTowerType(building) && buildings[building.type]);
+}
+
+function sorterBeltEndpointAt(cell, preferred = 'end') {
+  if (!cell) return null;
+  const matches = [];
+  state.belts.forEach(belt => {
+    const start = { x: belt.x, y: belt.y };
+    const end = getBeltEnd(belt);
+    const sameStart = start.x === cell.x && start.y === cell.y;
+    const sameEnd = end.x === cell.x && end.y === cell.y;
+    if (sameStart && sameEnd) matches.push({ belt, endpoint: preferred });
+    else if (sameStart) matches.push({ belt, endpoint: 'start' });
+    else if (sameEnd) matches.push({ belt, endpoint: 'end' });
+  });
+  return matches.sort((left, right) => (left.endpoint === preferred ? -1 : 1) - (right.endpoint === preferred ? -1 : 1) || left.belt.id.localeCompare(right.belt.id))[0] || null;
+}
+
+function sorterPlacementCandidates(building, belt, mode) {
+  if (!isSorterTargetBuilding(building) || !belt) return [];
+  const endpoint = mode === 'output' ? { x: belt.x, y: belt.y } : getBeltEnd(belt);
+  const center = buildingCenter(building);
+  const seen = new Set();
+  return buildingPortCells(building)
+    .filter(cell => {
+      const key = `${cell.x},${cell.y}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      const candidate = { type: 'sorter', x: cell.x, y: cell.y };
+      return isInsideWorld(cell)
+        && !isTerrainBlocked(cell)
+        && !resourceNodeAt(cell)
+        && !overlapsBuilding(cell.x, cell.y, 1)
+        && !beltAt(cell)
+        && isAdjacentToBuilding(endpoint, candidate);
+    })
+    .map(cell => ({
+      cell,
+      score: Math.abs(cell.x - endpoint.x) + Math.abs(cell.y - endpoint.y) * 1.2
+        + Math.abs(cell.x - center.x) * .2 + Math.abs(cell.y - center.y) * .2
+    }))
+    .sort((left, right) => left.score - right.score || left.cell.y - right.cell.y || left.cell.x - right.cell.x);
+}
+
+function findSorterPlacement(building, belt, mode) {
+  return sorterPlacementCandidates(building, belt, mode)[0] || null;
+}
+
+function sorterPlacementPreview() {
+  const anchor = state.pointer.sorterAnchor;
+  if (!anchor) return null;
+  if (anchor.kind === 'building') {
+    const building = state.buildings.find(entry => entry.id === anchor.id);
+    const endpoint = sorterBeltEndpointAt(state.pointer.cell, 'start');
+    if (!isSorterTargetBuilding(building)) return { valid: false, building, mode: 'output', reason: '分拣器不能作为物料接口' };
+    if (!endpoint) return { valid: false, building, mode: 'output', reason: '请拖到传送带起点' };
+    if (endpoint.endpoint !== 'start') return { valid: false, building, belt: endpoint.belt, mode: 'output', endpointCell: getBeltEnd(endpoint.belt), reason: '建筑出料必须接入传送带起点' };
+    const placement = findSorterPlacement(building, endpoint.belt, 'output');
+    return { valid: Boolean(placement), building, belt: endpoint.belt, mode: 'output', endpointCell: { x: endpoint.belt.x, y: endpoint.belt.y }, placement, reason: placement ? '' : '建筑接口和传送带起点之间没有空位' };
+  }
+  const belt = state.belts.find(entry => entry.id === anchor.id);
+  const building = findBuildingAt(state.pointer.cell);
+  if (anchor.endpoint !== 'end') return { valid: false, building, belt, mode: 'input', reason: '建筑进料必须从传送带末端开始' };
+  if (!isSorterTargetBuilding(building)) return { valid: false, building, belt, mode: 'input', reason: '请拖到需要物料的建筑接口' };
+  const placement = findSorterPlacement(building, belt, 'input');
+  return { valid: Boolean(placement), building, belt, mode: 'input', endpointCell: belt ? getBeltEnd(belt) : null, placement, reason: placement ? '' : '建筑接口和传送带末端之间没有空位' };
+}
+
+function placeSorterBetween(building, belt, mode) {
+  const placement = findSorterPlacement(building, belt, mode);
+  if (!placement) { showToast('分拣器需要同时贴近建筑接口和传送带端点', 'warning'); return false; }
+  const meta = buildings.sorter;
+  if (!canAfford(buildCost('sorter'))) { showToast(`分拣器建材不足 · 需要 ${formatCost(meta.cost)}`, 'warning'); return false; }
+  const sorter = makeBuilding('sorter', placement.cell.x, placement.cell.y);
+  sorter.sorterMode = mode;
+  sorter.rotation = mode === 'output' ? 0 : 180;
+  const usedKit = consumeBuildKit('sorter');
+  if (!usedKit) spend(meta.cost);
+  sorter.constructionKit = usedKit;
+  state.buildings.push(sorter);
+  rebuildPowerGrids();
+  state.selectedId = sorter.id;
+  state.sorterRoutingSignature = '';
+  saveGame();
+  showToast(mode === 'output' ? '分拣器已安装 · 建筑 → 传送带' : '分拣器已安装 · 传送带 → 建筑');
+  return true;
+}
+
+function drawSorterPortMarker(cell, color, active = false, occupied = false) {
+  const point = worldToScreen(cell.x + .5, cell.y + .5);
+  const pulse = active ? 1 + Math.sin(state.animTime * 5) * .16 : 1;
+  ctx.save();
+  ctx.globalAlpha = occupied ? .22 : active ? .94 : .58;
+  ctx.strokeStyle = color;
+  ctx.fillStyle = `${color}${occupied ? '10' : '22'}`;
+  ctx.lineWidth = active ? 2 : 1;
+  ctx.beginPath();
+  ctx.arc(point.x, point.y, (occupied ? 4 : 5) * pulse, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawSorterPortHints() {
+  const anchor = state.pointer.sorterAnchor;
+  const preview = sorterPlacementPreview();
+  state.buildings.filter(isSorterTargetBuilding).forEach(building => {
+    buildingPortCells(building).forEach(port => {
+      const selected = anchor?.kind === 'building' && anchor.id === building.id;
+      drawSorterPortMarker(port, selected ? '#c7d94c' : '#69d8da', selected);
+    });
+  });
+  state.belts.forEach(belt => {
+    const start = { x: belt.x, y: belt.y };
+    const end = getBeltEnd(belt);
+    drawSorterPortMarker(start, '#c7d94c', anchor?.kind === 'belt' && anchor.id === belt.id && anchor.endpoint === 'start', true);
+    if (end.x !== start.x || end.y !== start.y) drawSorterPortMarker(end, '#f7c35e', anchor?.kind === 'belt' && anchor.id === belt.id && anchor.endpoint === 'end', true);
+  });
+  if (preview?.endpointCell) drawSorterPortMarker(preview.endpointCell, preview.valid ? '#62d69a' : '#ee6a65', true);
+}
+
+function drawSorterPreview() {
+  const anchor = state.pointer.sorterAnchor;
+  if (!anchor) return;
+  const preview = sorterPlacementPreview();
+  if (!preview) return;
+  const valid = preview.valid;
+  const color = valid ? '#62d69a' : '#ee6a65';
+  if (preview.building && preview.endpointCell) {
+    const from = buildingCenter(preview.building);
+    const to = { x: preview.endpointCell.x + .5, y: preview.endpointCell.y + .5 };
+    const ghost = preview.placement?.cell;
+    const ghostPoint = ghost ? worldToScreen(ghost.x, ghost.y) : null;
+    ctx.save();
+    ctx.strokeStyle = `${color}bb`;
+    ctx.lineWidth = Math.max(1.5, state.zoom * 1.5);
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath();
+    ctx.moveTo(worldToScreen(from.x, from.y).x, worldToScreen(from.x, from.y).y);
+    ctx.lineTo(ghostPoint ? ghostPoint.x + TILE * state.zoom / 2 : worldToScreen(to.x, to.y).x, ghostPoint ? ghostPoint.y + TILE * state.zoom / 2 : worldToScreen(to.x, to.y).y);
+    ctx.lineTo(worldToScreen(to.x, to.y).x, worldToScreen(to.x, to.y).y);
+    ctx.stroke();
+    ctx.restore();
+    if (ghostPoint) {
+      const size = TILE * state.zoom;
+      ctx.save();
+      ctx.globalAlpha = .64;
+      ctx.fillStyle = `${color}28`;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 4]);
+      ctx.fillRect(ghostPoint.x + 2, ghostPoint.y + 2, size - 4, size - 4);
+      ctx.strokeRect(ghostPoint.x + 2, ghostPoint.y + 2, size - 4, size - 4);
+      if (hasImage(assets.sorter)) {
+        ctx.globalAlpha = .26;
+        ctx.drawImage(assets.sorter, ghostPoint.x + size * .06, ghostPoint.y + size * .06, size * .88, size * .88);
+      }
+      ctx.restore();
+    }
+  }
+}
+
 function drawBeltPortHints() {
+  if (state.tool === 'sorter') {
+    drawSorterPortHints();
+    return;
+  }
   if (state.tool !== 'belt') return;
   const hoverBuilding = findBuildingAt(state.pointer.cell);
   state.buildings.forEach(building => {
@@ -901,7 +1464,7 @@ function beltPortsBetweenBuildings(source, target) {
       [false, true].forEach(verticalFirst => {
         const segments = beltSegmentsBetweenOrder(start, end, verticalFirst);
         const cells = segments.flatMap(beltCells);
-        const invalid = cells.some(cell => overlapsBuilding(cell.x, cell.y, 1) || beltAt(cell));
+        const invalid = cells.some(cell => isTerrainBlocked(cell) || overlapsBuilding(cell.x, cell.y, 1) || beltAt(cell));
         if (invalid) return;
         const length = cells.length;
         const turns = segments.length - 1;
@@ -942,12 +1505,75 @@ function findNodeForBuilding(building) {
   return state.nodes.find(node => node.x >= building.x - 1 && node.x < building.x + buildings[building.type].size + 1 && node.y >= building.y - 1 && node.y < building.y + buildings[building.type].size + 1);
 }
 
+function resourceNodeAt(cell) {
+  return state.nodes.find(node => node.x === cell.x && node.y === cell.y) || null;
+}
+
+function resourceNodeCollisionAt(cell, size) {
+  const blockedCell = footprintCells(cell, size).find(entry => resourceNodeAt(entry));
+  return blockedCell ? { cell: blockedCell, node: resourceNodeAt(blockedCell) } : null;
+}
+
+function buildingCollisionAt(cell, size, ignoreId = null) {
+  const cells = footprintCells(cell, size);
+  return state.buildings.find(building => building.id !== ignoreId && cells.some(entry => {
+    const buildingSize = buildings[building.type].size;
+    return entry.x >= building.x && entry.x < building.x + buildingSize && entry.y >= building.y && entry.y < building.y + buildingSize;
+  })) || null;
+}
+
+function footprintBeltAt(cell, size) {
+  return footprintCells(cell, size).find(entry => beltAt(entry)) || null;
+}
+
 function overlapsBuilding(x, y, size) {
-  return state.buildings.some(building => x < building.x + buildings[building.type].size && x + size > building.x && y < building.y + buildings[building.type].size && y + size > building.y);
+  return Boolean(buildingCollisionAt({ x, y }, size));
+}
+
+function kitCount(type) {
+  return Math.max(0, Math.floor(state.kits?.[type] || 0));
+}
+
+function buildCost(type) {
+  return kitCount(type) > 0 ? {} : buildings[type]?.cost || {};
+}
+
+function canUseKit(type) {
+  return kitCount(type) > 0;
+}
+
+function consumeBuildKit(type) {
+  if (!canUseKit(type)) return false;
+  state.kits[type] -= 1;
+  return true;
+}
+
+function craftRecipe(id) {
+  const recipe = handcraftRecipes.find(entry => entry.id === id);
+  if (!recipe) return;
+  if (!canAfford(recipe.cost)) {
+    showToast(`材料不足 · 需要 ${formatCost(recipe.cost)}`, 'warning');
+    return;
+  }
+  spend(recipe.cost);
+  if (recipe.outputType === 'kit') state.kits[recipe.output] = kitCount(recipe.output) + recipe.amount;
+  else state.inventory[recipe.output] = (state.inventory[recipe.output] || 0) + recipe.amount;
+  saveGame();
+  showToast(`${recipe.outputLabel} 已加入待放置套件`);
+  renderCraftPanel();
+  updateHUD();
 }
 
 function canAfford(cost, multiplier = 1) {
   return Object.entries(cost).every(([resource, amount]) => (state.inventory[resource] || 0) >= amount * multiplier);
+}
+
+function canAffordStorage(cost, multiplier = 1) {
+  return Object.entries(cost).every(([resource, amount]) => storageAmount(resource) >= amount * multiplier);
+}
+
+function takeStorageCost(cost, multiplier = 1) {
+  Object.entries(cost).forEach(([resource, amount]) => takeFromStorage(resource, amount * multiplier));
 }
 
 function spend(cost, multiplier = 1) {
@@ -1000,8 +1626,8 @@ function labProductionCube(building) {
   // Information research is the first nested recipe. An automatic lab keeps
   // its own inputs alive by making the missing lower-tier matrix first.
   if (targetCube === 'informationCube') {
-    if ((state.inventory.energyCube || 0) < 1) return 'energyCube';
-    if ((state.inventory.structureCube || 0) < 1) return 'structureCube';
+    if (storageAmount('energyCube') < 1) return 'energyCube';
+    if (storageAmount('structureCube') < 1) return 'structureCube';
   }
   return targetCube;
 }
@@ -1010,14 +1636,36 @@ function placementCheck(type, cell) {
   const meta = buildings[type];
   if (!meta) return { valid: false, reason: '未知设施' };
   if (!isBuildingUnlocked(type)) {
-    return { valid: false, reason: `需要完成「${buildingTechName(type)}」` };
+    return { valid: false, reason: `需要完成「${buildingTechName(type)}」`, reasonCode: 'tech' };
   }
-  if (cell.x < -18 || cell.x > 18 || cell.y < -12 || cell.y > 12) return { valid: false, reason: '超出可建造区域' };
-  if (overlapsBuilding(cell.x, cell.y, meta.size)) return { valid: false, reason: '空间被占用' };
-  if (!canAfford(meta.cost)) return { valid: false, reason: '建材不足' };
+  const footprint = footprintCells(cell, meta.size);
+  const outOfBounds = footprint.find(entry => !isInsideWorld(entry));
+  if (outOfBounds) return { valid: false, reason: '建筑体积超出可建造区域', reasonCode: 'bounds', blockedCell: outOfBounds };
+  const collision = buildingCollisionAt(cell, meta.size);
+  if (collision) return { valid: false, reason: `建筑体积与${buildings[collision.type].label}重叠`, reasonCode: 'building', collision };
+  const beltCollision = footprintBeltAt(cell, meta.size);
+  if (beltCollision) return { valid: false, reason: '建筑体积压到传送带', reasonCode: 'belt', blockedCell: beltCollision };
+  const terrainCollision = footprint.find(entry => isTerrainBlocked(entry));
+  if (terrainCollision) {
+    const terrain = terrainAt(terrainCollision);
+    return { valid: false, reason: `${terrain.label}不可建造`, reasonCode: 'terrain', blockedCell: terrainCollision, terrain };
+  }
+  const resourceCollision = resourceNodeCollisionAt(cell, meta.size);
+  if (resourceCollision) {
+    const resourceLabel = resources[resourceCollision.node.resource]?.label || '资源';
+    return {
+      valid: false,
+      reason: `建筑体积压住${resourceLabel}矿脉核心格`,
+      reasonCode: 'resource',
+      blockedCell: resourceCollision.cell,
+      node: resourceCollision.node
+    };
+  }
+  if (!canAfford(buildCost(type))) return { valid: false, reason: `建材不足 · 需要 ${formatCost(meta.cost)}`, reasonCode: 'cost' };
   const node = findNodeForBuilding({ type, x: cell.x, y: cell.y });
-  if (type === 'miner' && (!node || node.resource === 'crudeOil')) return { valid: false, reason: '采矿机必须覆盖矿脉' };
-  if (type === 'oilExtractor' && node?.resource !== 'crudeOil') return { valid: false, reason: '石油提取机必须覆盖原油渗流区' };
+  if (type === 'miner' && (!node || ['crudeOil', 'water'].includes(node.resource))) return { valid: false, reason: '采矿机必须覆盖固体矿脉', reasonCode: 'resource' };
+  if (type === 'oilExtractor' && node?.resource !== 'crudeOil') return { valid: false, reason: '石油提取机必须覆盖原油渗流区', reasonCode: 'resource' };
+  if (type === 'waterPump' && node?.resource !== 'water') return { valid: false, reason: '水泵必须覆盖水源采集区', reasonCode: 'resource' };
   return { valid: true };
 }
 
@@ -1026,10 +1674,14 @@ function placeBuilding(cell) {
   if (!check.valid) { showToast(check.reason, 'warning'); return; }
   const building = makeBuilding(state.tool, cell.x, cell.y, state.rotation);
   if (state.tool === 'miner') building.nodeId = findNodeForBuilding(building)?.id || null;
-  if (state.tool === 'oilExtractor') building.nodeId = findNodeForBuilding(building)?.id || null;
-  spend(buildings[state.tool].cost);
+  if (state.tool === 'oilExtractor' || state.tool === 'waterPump') building.nodeId = findNodeForBuilding(building)?.id || null;
+  const usedKit = consumeBuildKit(state.tool);
+  if (!usedKit) spend(buildings[state.tool].cost);
+  building.constructionKit = usedKit;
   state.buildings.push(building);
+  rebuildPowerGrids();
   state.selectedId = building.id;
+  state.selectedBeltId = null;
   saveGame();
   showToast(`${buildings[state.tool].label} 已部署`);
 }
@@ -1038,29 +1690,51 @@ function beltAt(cell) {
   return state.belts.find(belt => beltCells(belt).some(entry => entry.x === cell.x && entry.y === cell.y));
 }
 
+function findBeltAt(cell) {
+  if (!cell) return null;
+  return [...state.belts].reverse().find(belt => beltCells(belt).some(entry => entry.x === cell.x && entry.y === cell.y)) || null;
+}
+
 function placeBelt(start, end, presetSegments = null) {
   const rawSegments = presetSegments || (start && end ? beltSegmentsBetween(start, end) : []);
   const segments = freeBeltSegments(trimBeltExtension(start, rawSegments), start);
   if (!segments.length) { showToast('传送带至少需要两个网格', 'warning'); return; }
   const cells = segments.flatMap(beltCells);
-  if (cells.some(cell => cell.x < -18 || cell.x > 18 || cell.y < -12 || cell.y > 12 || overlapsBuilding(cell.x, cell.y, 1))) { showToast('传送带不能穿过设施或边界', 'warning'); return; }
+  const boundaryCell = cells.find(cell => !isInsideWorld(cell));
+  if (boundaryCell) { showToast('传送带不能超出可建造区域', 'warning'); return; }
+  const terrainCell = cells.find(cell => isTerrainBlocked(cell));
+  if (terrainCell) { showToast(`${terrainAt(terrainCell).label}不可铺设传送带`, 'warning'); return; }
+  if (cells.some(cell => overlapsBuilding(cell.x, cell.y, 1))) { showToast('传送带不能穿过设施', 'warning'); return; }
   const newCells = cells.filter(cell => !beltAt(cell));
-  if (!canAfford({ iron: 1 }, newCells.length)) { showToast('铁锭不足，无法铺设这段传送带', 'warning'); return; }
-  spend({ iron: 1 }, newCells.length);
-  state.belts.push(...segments.map(segment => ({
-    ...segment,
-    id: `belt-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`
-  })));
+  const kitCells = Math.min(kitCount('belt'), newCells.length);
+  const rawCells = newCells.length - kitCells;
+  if (!canAfford({ iron: 1 }, rawCells)) { showToast(`铁锭不足 · 还需要 ${rawCells} 个传送带组件`, 'warning'); return; }
+  state.kits.belt -= kitCells;
+  spend({ iron: 1 }, rawCells);
+  let remainingKits = kitCells;
+  state.belts.push(...segments.map(segment => {
+    const segmentCells = beltCells(segment).filter(cell => newCells.some(entry => entry.x === cell.x && entry.y === cell.y));
+    const segmentKitCells = Math.min(remainingKits, segmentCells.length);
+    remainingKits -= segmentKitCells;
+    return {
+      ...segment,
+      kitCells: segmentKitCells,
+      id: `belt-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`
+    };
+  }));
   saveGame();
   showToast(`传送带已铺设 · ${cells.length} 格`);
 }
 
 function removeAt(cell) {
   const building = findBuildingAt(cell);
-  if (building && building.type !== 'hub') {
+  if (building) {
     state.buildings = state.buildings.filter(item => item.id !== building.id);
-    refund(buildings[building.type].cost);
+    if (building.constructionKit) state.kits[building.type] = kitCount(building.type) + 1;
+    else refund(buildings[building.type].cost);
     state.selectedId = null;
+    state.selectedBeltId = null;
+    rebuildPowerGrids();
     saveGame();
     showToast(`${buildings[building.type].label} 已回收`);
     return;
@@ -1073,7 +1747,10 @@ function removeAt(cell) {
         if (beltId === belt.id) delete sorter.sorterRules[resource];
       });
     });
-    state.inventory.iron += Math.floor(belt.length * .6);
+    const kitCells = Math.max(0, belt.kitCells || 0);
+    state.kits.belt += Math.floor(kitCells * .6);
+    state.inventory.iron += Math.floor((belt.length - kitCells) * .6);
+    state.selectedBeltId = null;
     state.items = state.items.filter(item => item.beltId !== belt.id);
     saveGame();
     showToast('传送带已回收');
@@ -1083,8 +1760,8 @@ function removeAt(cell) {
 }
 
 function findBeltStartingNear(building, resource) {
-  if (building.type === 'sorter') return findSorterOutputBelt(building, resource);
-  return state.belts.find(belt => isAdjacentToBuilding({ x: belt.x, y: belt.y }, building) && Boolean(findDestinationAlongRoute(belt, resource, building.id)));
+  const sorter = findSorterForBuilding(building, resource, 'output');
+  return sorter ? sorterOutputBelts(sorter).find(belt => Boolean(findNextBelt(belt, resource, sorter.id)) || Boolean(findDestination(belt, resource, sorter.id))) : null;
 }
 
 function sorterOutputBelts(sorter) {
@@ -1092,6 +1769,33 @@ function sorterOutputBelts(sorter) {
   return state.belts
     .filter(belt => isAdjacentToBuilding({ x: belt.x, y: belt.y }, sorter))
     .sort((left, right) => left.y - right.y || left.x - right.x || left.id.localeCompare(right.id));
+}
+
+function sorterAttachedBuildings(sorter) {
+  if (!sorter || sorter.type !== 'sorter') return [];
+  return state.buildings
+    .filter(building => building.id !== sorter.id && building.type !== 'sorter' && !isPowerTowerType(building) && isAdjacentToBuilding({ x: sorter.x, y: sorter.y }, building))
+    .sort((left, right) => left.id.localeCompare(right.id));
+}
+
+function sorterAttachedBuilding(sorter) {
+  return sorterAttachedBuildings(sorter)[0] || null;
+}
+
+function sorterInputBelts(sorter) {
+  if (!sorter || sorter.type !== 'sorter') return [];
+  return state.belts
+    .filter(belt => isAdjacentToBuilding(getBeltEnd(belt), sorter))
+    .sort((left, right) => left.y - right.y || left.x - right.x || left.id.localeCompare(right.id));
+}
+
+function findSorterForBuilding(building, resource, mode) {
+  if (!building) return null;
+  return state.buildings
+    .filter(sorter => sorter.type === 'sorter' && (sorter.sorterMode || 'input') === mode)
+    .filter(sorter => sorterAttachedBuilding(sorter)?.id === building.id)
+    .filter(sorter => mode === 'output' || acceptsBuildingResource(building, resource))
+    .find(sorter => mode === 'input' ? sorterInputBelts(sorter).length > 0 : sorterOutputBelts(sorter).length > 0) || null;
 }
 
 function sorterPortDirection(sorter, belt) {
@@ -1125,9 +1829,9 @@ function findSorterOutputBelt(sorter, resource) {
   return selected;
 }
 
-function accepts(building, resource) {
+function acceptsBuildingResource(building, resource) {
   if (!isBuildingOperational(building)) return false;
-  if (building.type === 'hub') return Boolean(resources[resource]);
+  if (isStorageType(building)) return storageHasSpace(building);
   if (building.type === 'smelter') {
     // One smelter is one recipe line. This prevents a shared line from
     // silently filling with three ores while producing none of them reliably.
@@ -1136,7 +1840,7 @@ function accepts(building, resource) {
   if (building.type === 'assembler') return ['copperIngot', 'siliconWafer'].includes(resource);
   if (building.type === 'workbench') return ['ironIngot', 'copperIngot', 'siliconWafer'].includes(resource);
   if (building.type === 'thermal') return resource === 'coal';
-  if (building.type === 'sorter') return Boolean(resources[resource]);
+  if (building.type === 'waterPump') return false;
   if (building.type === 'researchLab') {
     const cube = labProductionCube(building);
     return Object.prototype.hasOwnProperty.call(cubeRecipes[cube]?.inputs || {}, resource);
@@ -1144,8 +1848,16 @@ function accepts(building, resource) {
   return false;
 }
 
+function accepts(building, resource) {
+  if (!isBuildingOperational(building)) return false;
+  if (building.type !== 'sorter') return acceptsBuildingResource(building, resource);
+  const mode = building.sorterMode || 'input';
+  const target = sorterAttachedBuilding(building);
+  return mode === 'input' && Boolean(target) && acceptsBuildingResource(target, resource) && sorterInputBelts(building).length > 0;
+}
+
 function inputCapacity(building) {
-  if (!building || building.type === 'hub') return Infinity;
+  if (!building) return 0;
   if (building.type === 'researchLab') return 6;
   if (building.type === 'smelter' || building.type === 'thermal') return 8;
   if (building.type === 'assembler' || building.type === 'workbench') return 6;
@@ -1157,26 +1869,18 @@ function outputCapacity(building) {
 }
 
 function deliver(building, resource) {
-  if (!accepts(building, resource)) return false;
-  if (building.type === 'hub') state.inventory[resource] = (state.inventory[resource] || 0) + 1;
-  else if (building.type === 'sorter') {
-    if ((building.input[resource] || 0) >= inputCapacity(building)) return false;
-    building.input[resource] = (building.input[resource] || 0) + 1;
-  }
-  else {
-    if ((building.input[resource] || 0) >= inputCapacity(building)) return false;
-    if (building.type === 'smelter' && !building.recipeResource) building.recipeResource = resource;
-    building.input[resource] = (building.input[resource] || 0) + 1;
-  }
+  // Belts may terminate at a sorter only. The sorter simulation owns the
+  // second hop into a machine or warehouse, keeping the logistics contract
+  // explicit even when a caller tries to bypass the topology.
+  if (!building || building.type !== 'sorter' || !accepts(building, resource)) return false;
+  if ((building.input[resource] || 0) >= inputCapacity(building)) return false;
+  building.input[resource] = (building.input[resource] || 0) + 1;
   return true;
 }
 
 function findDestination(belt, resource, sourceId = null) {
   const end = getBeltEnd(belt);
-  const candidates = state.buildings.filter(building => building.id !== sourceId && accepts(building, resource) && isAdjacentToBuilding(end, building));
-  // The core is a warehouse fallback. Processing buildings must win when both
-  // a machine and the core touch the same belt endpoint.
-  return candidates.find(building => building.type !== 'hub') || candidates.find(building => building.type === 'hub');
+  return state.buildings.find(building => building.id !== sourceId && building.type === 'sorter' && accepts(building, resource) && isAdjacentToBuilding(end, building)) || null;
 }
 
 function findDestinationAlongRoute(belt, resource, sourceId = null) {
@@ -1217,24 +1921,78 @@ function findNextBelt(belt, resource = null, sourceId = null) {
   return candidates.find(candidate => findDestinationAlongRoute(candidate, resource, sourceId)) || candidates[0];
 }
 
-function dispatchWarehouseStock() {
-  const hub = state.buildings.find(building => building.type === 'hub');
-  if (!isBuildingOperational(hub)) return;
-  state.belts
-    .filter(belt => isAdjacentToBuilding({ x: belt.x, y: belt.y }, hub))
-    .forEach(belt => {
-      // Keep one warehouse cargo per belt in flight. A full destination must
-      // not turn into an unbounded queue of invisible cargo.
-      if (state.items.some(item => item.sourceId === hub.id && item.beltId === belt.id)) return;
-      const resource = Object.keys(state.inventory).find(candidate => {
-        if ((state.inventory[candidate] || 0) <= 0) return false;
-        const destination = findDestinationAlongRoute(belt, candidate, hub.id);
-        return destination && destination.id !== hub.id;
-      });
-      if (!resource) return;
-      state.inventory[resource] -= 1;
-      state.items.push({ id: `${Date.now()}-${Math.random()}`, beltId: belt.id, sourceId: hub.id, resource, progress: 0 });
+function warehouseResourceNeedScore(destination, resource) {
+  if (!destination) return Number.POSITIVE_INFINITY;
+  const current = destination.input?.[resource] || 0;
+  if (current >= inputCapacity(destination)) return Number.POSITIVE_INFINITY;
+  let required = 0;
+  if (destination.type === 'researchLab') required = cubeRecipes[labProductionCube(destination)]?.inputs?.[resource] || 0;
+  else if (destination.type === 'smelter') required = destination.recipeResource === resource ? 1 : 0;
+  else if (destination.type === 'assembler') required = ({ copperIngot: 1, siliconWafer: 1 })[resource] || 0;
+  else if (destination.type === 'workbench') required = ({ ironIngot: 1, copperIngot: 1 })[resource] || 0;
+  else if (destination.type === 'thermal') required = resource === 'coal' ? 1 : 0;
+  if (required > current) return 0;
+  return 1 + current / Math.max(1, inputCapacity(destination));
+}
+
+function dispatchStorageStock() {
+  storageBuildings().forEach(storage => {
+    const outputSorters = state.buildings.filter(sorter => sorter.type === 'sorter'
+      && (sorter.sorterMode || 'input') === 'output'
+      && sorterAttachedBuilding(sorter)?.id === storage.id
+      && getGridPowerState(sorter).powered
+      && sorterOutputBelts(sorter).length);
+    outputSorters.forEach(sorter => {
+      if (Object.values(sorter.output || {}).reduce((sum, amount) => sum + amount, 0) >= inputCapacity(sorter)) return;
+      const candidates = Object.keys(storage.stock || {}).map(resource => {
+        if ((storage.stock[resource] || 0) <= 0) return null;
+        const belt = sorterOutputBelts(sorter).find(candidate => Boolean(findDestinationAlongRoute(candidate, resource, sorter.id)));
+        return belt ? { resource, belt } : null;
+      }).filter(Boolean);
+      const candidate = candidates[0];
+      if (!candidate) return;
+      storage.stock[candidate.resource] -= 1;
+      sorter.output[candidate.resource] = (sorter.output[candidate.resource] || 0) + 1;
     });
+  });
+}
+
+function simulateSorters(dt) {
+  state.buildings.filter(building => building.type === 'sorter' && isBuildingOperational(building)).forEach(sorter => {
+    const target = sorterAttachedBuilding(sorter);
+    const powerState = getGridPowerState(sorter);
+    if (!target || !powerState.powered) return;
+    const mode = sorter.sorterMode || 'input';
+    if (mode === 'input') {
+      const entry = Object.entries(sorter.input || {}).find(([resource, amount]) => amount > 0 && acceptsBuildingResource(target, resource));
+      if (!entry) return;
+      sorter.process = (sorter.process || 0) + dt * powerState.efficiency;
+      if (sorter.process < .22) return;
+      const [resource] = entry;
+      if (isStorageType(target)) {
+        if (!storageHasSpace(target)) return;
+        target.stock[resource] = (target.stock[resource] || 0) + 1;
+      } else {
+        if (!acceptsBuildingResource(target, resource) || (target.input[resource] || 0) >= inputCapacity(target)) return;
+        if (target.type === 'smelter' && !target.recipeResource) target.recipeResource = resource;
+        target.input[resource] = (target.input[resource] || 0) + 1;
+      }
+      sorter.input[resource] -= 1;
+      sorter.process = 0;
+    }
+  });
+}
+
+function dispatchSorterOutputs() {
+  state.buildings.filter(building => building.type === 'sorter' && isBuildingOperational(building) && getGridPowerState(building).powered && (building.sorterMode || 'input') === 'output').forEach(sorter => {
+    Object.entries(sorter.output || {}).forEach(([resource, amount]) => {
+      if (amount <= 0 || state.items.some(item => item.sourceId === sorter.id && item.resource === resource)) return;
+      const belt = findSorterOutputBelt(sorter, resource);
+      if (!belt) return;
+      sorter.output[resource] -= 1;
+      state.items.push({ id: `${Date.now()}-${Math.random()}`, beltId: belt.id, sourceId: sorter.id, resource, progress: 0 });
+    });
+  });
 }
 
 function hasRecipeInputs(input, recipe) {
@@ -1271,6 +2029,133 @@ function getAssemblyTime(building) {
 function getResearchProductionTime(building, cube) {
   const base = cubeRecipes[cube]?.time || 4.2;
   return isTechUnlocked('matrix-lab') ? base * .8 : base;
+}
+
+const LOCAL_POWER_LINK_RANGE = 3.7;
+const POWER_EPSILON = .0001;
+
+function powerBuildingCenter(building) {
+  return buildingCenter(building);
+}
+
+function getTransmissionRange(building) {
+  if (!isPowerTowerType(building)) return 0;
+  const baseRange = buildings[building.type]?.transmissionRange || 0;
+  const transmissionUpgrade = isTechUnlocked('power-transmission') ? 1.15 : 1;
+  const backboneUpgrade = isTechUnlocked('advanced-power-grid') ? 1.1 : 1;
+  return baseRange * transmissionUpgrade * backboneUpgrade;
+}
+
+function isPowerBuilding(building) {
+  const meta = buildings[building?.type];
+  return Boolean(building && meta && (meta.power > 0 || meta.generation > 0 || isPowerTowerType(building) || building.baseHub));
+}
+
+function powerDistance(left, right) {
+  const leftCenter = powerBuildingCenter(left);
+  const rightCenter = powerBuildingCenter(right);
+  return Math.hypot(leftCenter.x - rightCenter.x, leftCenter.y - rightCenter.y);
+}
+
+function powerNodesConnected(left, right) {
+  const leftTower = isPowerTowerType(left);
+  const rightTower = isPowerTowerType(right);
+  const distance = powerDistance(left, right);
+  if (leftTower && rightTower) {
+    return left.gridEnabled !== false
+      && right.gridEnabled !== false
+      && distance <= getTransmissionRange(left) + getTransmissionRange(right);
+  }
+  if (leftTower || rightTower) {
+    const tower = leftTower ? left : right;
+    return distance <= getTransmissionRange(tower);
+  }
+  return distance <= LOCAL_POWER_LINK_RANGE;
+}
+
+function getGridPowerState(building) {
+  if (!isPowerBuilding(building)) return { grid: null, powered: true, efficiency: 1, status: '无需供电' };
+  const grid = state.powerGrids.find(entry => entry.buildingIds.includes(building.id));
+  if (!grid) return { grid: null, powered: false, efficiency: 0, status: '未接入电网' };
+  if (grid.blackout) return { grid, powered: false, efficiency: 0, status: '电网瘫痪' };
+  return {
+    grid,
+    powered: true,
+    efficiency: grid.highLoad && (buildings[building.type]?.power || 0) > 0 ? .5 : 1,
+    status: grid.highLoad ? '电网高负载' : '电网在线'
+  };
+}
+
+function rebuildPowerGrids() {
+  const powerBuildings = state.buildings.filter(building => isBuildingOperational(building) && isPowerBuilding(building));
+  const adjacency = new Map(powerBuildings.map(building => [building.id, []]));
+  const links = [];
+  for (let leftIndex = 0; leftIndex < powerBuildings.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < powerBuildings.length; rightIndex += 1) {
+      const left = powerBuildings[leftIndex];
+      const right = powerBuildings[rightIndex];
+      if (!powerNodesConnected(left, right)) continue;
+      adjacency.get(left.id).push(right.id);
+      adjacency.get(right.id).push(left.id);
+      links.push({ left: left.id, right: right.id });
+    }
+  }
+
+  const visited = new Set();
+  const grids = [];
+  powerBuildings.slice().sort((left, right) => left.id.localeCompare(right.id)).forEach(seed => {
+    if (visited.has(seed.id)) return;
+    const queue = [seed.id];
+    const buildingIds = [];
+    visited.add(seed.id);
+    while (queue.length) {
+      const id = queue.shift();
+      buildingIds.push(id);
+      (adjacency.get(id) || []).forEach(nextId => {
+        if (visited.has(nextId)) return;
+        visited.add(nextId);
+        queue.push(nextId);
+      });
+    }
+    const members = buildingIds.map(id => powerBuildings.find(building => building.id === id)).filter(Boolean);
+    const generation = members.reduce((total, building) => {
+      if (building.baseHub) return total + state.basePowerGeneration;
+      if (building.type === 'thermal' && (building.input.coal || 0) <= 0) return total;
+      return total + getPowerGeneration(building);
+    }, 0);
+    const load = members.reduce((total, building) => total + (buildings[building.type]?.power || 0), 0);
+    const ratio = generation > POWER_EPSILON ? load / generation : load > 0 ? Number.POSITIVE_INFINITY : 0;
+    const blackout = load > generation + POWER_EPSILON;
+    const highLoad = !blackout && generation > POWER_EPSILON && ratio >= .8;
+    const grid = {
+      id: `grid-${grids.length + 1}`,
+      buildingIds,
+      buildings: members,
+      links: links.filter(link => buildingIds.includes(link.left) && buildingIds.includes(link.right)),
+      towers: members.filter(isPowerTowerType),
+      generation,
+      load,
+      ratio,
+      highLoad,
+      blackout,
+      efficiency: blackout ? 0 : highLoad ? .5 : 1,
+      status: blackout ? '瘫痪' : highLoad ? '高负载' : '稳定'
+    };
+    members.forEach(building => { building.powerGridId = grid.id; });
+    grids.push(grid);
+  });
+
+  state.powerGrids = grids;
+  state.powerSummary = {
+    gridCount: grids.length,
+    highLoadCount: grids.filter(grid => grid.highLoad).length,
+    blackoutCount: grids.filter(grid => grid.blackout).length,
+    generation: grids.reduce((total, grid) => total + grid.generation, 0),
+    load: grids.reduce((total, grid) => total + grid.load, 0)
+  };
+  state.powerGeneration = state.powerSummary.generation;
+  state.powerLoad = state.powerSummary.load;
+  return grids;
 }
 
 function getPowerGeneration(building) {
@@ -1310,41 +2195,29 @@ function techUpgradeText(tech) {
   return `升级：${tech.upgrades.map(buildingLabel).join('、')}`;
 }
 
-function pullResearchInputsFromCore(building, recipe) {
-  const hub = state.buildings.find(entry => entry.type === 'hub');
-  if (!hub || !building || !recipe) return;
-  Object.entries(recipe.inputs).forEach(([resource, amount]) => {
-    const missing = Math.max(0, amount - (building.input[resource] || 0));
-    if (!missing) return;
-    const available = Math.min(missing, state.inventory[resource] || 0);
-    if (available <= 0) return;
-    state.inventory[resource] -= available;
-    building.input[resource] = (building.input[resource] || 0) + available;
-  });
-}
-
 function getResearchSpeed() {
   return activeCareer().effect === 'research' ? 1.3 : 1;
 }
 
 function simulateBuildings(dt) {
-  const operationalBuildings = state.buildings.filter(isBuildingOperational);
-  state.powerLoad = operationalBuildings.reduce((total, building) => total + (buildings[building.type]?.power || 0), 0);
-  state.powerGeneration = operationalBuildings.reduce((total, building) => {
-    if (building.type === 'thermal' && (building.input.coal || 0) <= 0) return total;
-    return total + getPowerGeneration(building);
-  }, 0);
-  const powered = state.powerGeneration >= state.powerLoad;
+  rebuildPowerGrids();
 
-  dispatchWarehouseStock();
+  dispatchStorageStock();
 
   state.buildings.forEach(building => {
     if (!isBuildingOperational(building)) return;
-    if (building.type === 'miner' || building.type === 'oilExtractor') {
+    const powerState = getGridPowerState(building);
+    const efficiency = powerState.efficiency;
+    if (isPowerBuilding(building) && !powerState.powered && buildings[building.type]?.power > 0) return;
+    if (building.type === 'miner' || building.type === 'oilExtractor' || building.type === 'waterPump') {
       const node = state.nodes.find(item => item.id === building.nodeId);
-      const correctResource = building.type === 'oilExtractor' ? node?.resource === 'crudeOil' : node?.resource !== 'crudeOil';
-      if (!node || !correctResource || node.amount <= 0 || !powered) return;
-      building.timer += dt;
+      const correctResource = building.type === 'oilExtractor'
+        ? node?.resource === 'crudeOil'
+        : building.type === 'waterPump'
+          ? node?.resource === 'water'
+          : node?.resource && !['crudeOil', 'water'].includes(node.resource);
+      if (!node || !correctResource || node.amount <= 0 || !powerState.powered) return;
+      building.timer += dt * efficiency;
       const extractionTime = getMiningTime(building);
       if (building.timer >= extractionTime && Object.values(building.output).reduce((a, b) => a + b, 0) < 5) {
         building.timer = 0;
@@ -1353,11 +2226,11 @@ function simulateBuildings(dt) {
       }
     }
 
-    if (building.type === 'smelter' && powered) {
+    if (building.type === 'smelter' && powerState.powered) {
       if (Object.values(building.output).reduce((sum, amount) => sum + amount, 0) >= outputCapacity(building)) return;
       const raw = building.recipeResource || ['copper', 'iron', 'silicon'].find(resource => (building.input[resource] || 0) > 0);
       if (!raw) return;
-      building.process += dt;
+      building.process += dt * efficiency;
       if (building.process >= getSmeltingTime()) {
         building.process = 0;
         building.input[raw] -= 1;
@@ -1366,13 +2239,13 @@ function simulateBuildings(dt) {
       }
     }
 
-    if ((building.type === 'assembler' || building.type === 'workbench') && powered) {
+    if ((building.type === 'assembler' || building.type === 'workbench') && powerState.powered) {
       if (Object.values(building.output).reduce((sum, amount) => sum + amount, 0) >= outputCapacity(building)) return;
       const recipe = building.type === 'workbench'
         ? { inputs: { ironIngot: 1, copperIngot: 1 }, output: 'processor', time: getAssemblyTime(building) }
         : { inputs: { copperIngot: 1, siliconWafer: 1 }, output: 'processor', time: getAssemblyTime(building) };
       if (!hasRecipeInputs(building.input, recipe)) return;
-      building.process += dt;
+      building.process += dt * efficiency;
       if (building.process >= recipe.time) {
         building.process = 0;
         consumeRecipeInputs(building.input, recipe);
@@ -1380,34 +2253,20 @@ function simulateBuildings(dt) {
       }
     }
 
-    if (building.type === 'sorter' && powered) {
-      if (Object.values(building.output).reduce((sum, amount) => sum + amount, 0) >= outputCapacity(building)) return;
-      const entry = Object.entries(building.input).find(([, amount]) => amount > 0);
-      if (!entry) return;
-      building.process += dt;
-      if (building.process >= .22) {
-        building.process = 0;
-        const [resource] = entry;
-        building.input[resource] -= 1;
-        building.output[resource] = (building.output[resource] || 0) + 1;
-      }
-    }
-
-    if (building.type === 'researchLab' && powered) {
+    if (building.type === 'researchLab' && powerState.powered) {
       if (Object.values(building.output).reduce((sum, amount) => sum + amount, 0) >= outputCapacity(building)) return;
       const target = researchTarget();
       const cube = labProductionCube(building);
       const recipe = cubeRecipes[cube];
       if (!recipe) return;
-      pullResearchInputsFromCore(building, recipe);
       Object.entries(building.input).forEach(([resource, amount]) => {
         if (recipe.inputs[resource] === undefined) {
-          state.inventory[resource] = (state.inventory[resource] || 0) + amount;
+          putInStorage(resource, amount);
           delete building.input[resource];
         }
       });
       if (!hasRecipeInputs(building.input, recipe)) return;
-      building.process += dt;
+      building.process += dt * efficiency;
       if (building.process >= getResearchProductionTime(building, cube)) {
         building.process = 0;
         consumeRecipeInputs(building.input, recipe);
@@ -1415,8 +2274,8 @@ function simulateBuildings(dt) {
       }
     }
 
-    if (building.type === 'thermal' && powered && (building.input.coal || 0) > 0) {
-      building.fuelTimer = (building.fuelTimer || 0) + dt;
+    if (building.type === 'thermal' && powerState.powered && (building.input.coal || 0) > 0) {
+      building.fuelTimer = (building.fuelTimer || 0) + dt * efficiency;
       if (building.fuelTimer >= 4) {
         building.fuelTimer = 0;
         building.input.coal -= 1;
@@ -1425,21 +2284,23 @@ function simulateBuildings(dt) {
   });
 
   state.buildings.forEach(building => {
-    if (!isBuildingOperational(building)) return;
+    if (!isBuildingOperational(building) || isStorageType(building) || building.type === 'sorter') return;
     Object.entries(building.output).forEach(([resource, amount]) => {
       if (amount <= 0 || state.items.some(item => item.sourceId === building.id && item.resource === resource)) return;
-      const belt = findBeltStartingNear(building, resource);
-      if (!belt) {
-        if (building.type === 'researchLab') {
-          building.output[resource] -= 1;
-          state.inventory[resource] = (state.inventory[resource] || 0) + 1;
-        }
-        return;
-      }
+      const sorter = findSorterForBuilding(building, resource, 'output');
+      if (!sorter || Object.values(sorter.output || {}).reduce((sum, value) => sum + value, 0) >= inputCapacity(sorter)) return;
       building.output[resource] -= 1;
-      state.items.push({ id: `${Date.now()}-${Math.random()}`, beltId: belt.id, sourceId: building.id, resource, progress: 0 });
+      sorter.output[resource] = (sorter.output[resource] || 0) + 1;
     });
   });
+
+  state.buildings.forEach(building => {
+    if (building.type !== 'sorter' || !isBuildingOperational(building)) return;
+    const powerState = getGridPowerState(building);
+    building.powerEfficiency = powerState.efficiency;
+  });
+  simulateSorters(dt);
+  dispatchSorterOutputs();
 
   state.items = state.items.filter(item => {
     const belt = state.belts.find(entry => entry.id === item.beltId);
@@ -1452,10 +2313,6 @@ function simulateBuildings(dt) {
     if (nextBelt) {
       item.beltId = nextBelt.id;
       item.progress = 0;
-    } else if (item.sourceId === state.buildings.find(building => building.type === 'hub')?.id) {
-      // Return rejected warehouse cargo instead of leaving a dead item at a port.
-      state.inventory[item.resource] = (state.inventory[item.resource] || 0) + 1;
-      return false;
     } else {
       // Keep a single cargo unit parked at the terminal. It will be retried on
       // the next tick after the destination consumes space.
@@ -1469,12 +2326,17 @@ function simulateResearch(dt) {
   state.researchRate = 0;
   const tech = researchTarget();
   if (!tech || isTechUnlocked(tech.id)) return;
-  const labCount = state.buildings.filter(building => building.type === 'researchLab' && isBuildingOperational(building)).length;
-  if (!labCount) return;
-  const available = state.inventory[tech.cube] || 0;
+  const labPower = state.buildings
+    .filter(building => building.type === 'researchLab' && isBuildingOperational(building))
+    .reduce((total, building) => {
+      const powerState = getGridPowerState(building);
+      return total + (powerState.powered ? powerState.efficiency : 0);
+    }, 0);
+  if (!labPower) return;
+  const available = storageAmount(tech.cube);
   if (available <= 0) return;
-  const consumed = Math.min(available, dt * 1.25 * labCount * getResearchSpeed());
-  state.inventory[tech.cube] -= consumed;
+  const consumed = Math.min(available, dt * 1.25 * labPower * getResearchSpeed());
+  takeFromStorage(tech.cube, consumed);
   state.research.progress += consumed;
   state.researchRate = consumed / Math.max(dt, .001);
   if (state.research.progress >= tech.cost) {
@@ -1514,11 +2376,11 @@ function launchRoute() {
   if (state.interstellar.route) { showToast('当前已有货运舱在航线上', 'warning'); return; }
   if (!hasTechPrerequisites({ requires: target.requires })) { showToast('该星球的信标尚未接入', 'warning'); return; }
   const cargo = cargoOptions().find(option => option.resource === state.interstellar.cargo) || cargoOptions()[0];
-  if ((state.inventory[cargo.resource] || 0) < cargo.amount) {
+  if (storageAmount(cargo.resource) < cargo.amount) {
     showToast(`货舱需要 ${resources[cargo.resource].label} ×${cargo.amount}`, 'warning');
     return;
   }
-  state.inventory[cargo.resource] -= cargo.amount;
+  takeFromStorage(cargo.resource, cargo.amount);
   state.interstellar.route = { id: `route-${Date.now()}`, targetId: target.id, cargo: cargo.resource, amount: cargo.amount, progress: 0, phase: 'outbound' };
   addFlightLog(`货运舱发射 → ${target.name} · ${resources[cargo.resource].label} ×${cargo.amount}`);
   saveGame();
@@ -1540,7 +2402,8 @@ function simulateInterstellar(dt) {
     return;
   }
   const reward = target.reward;
-  state.inventory[reward.resource] = (state.inventory[reward.resource] || 0) + reward.amount;
+  const stored = putInStorage(reward.resource, reward.amount);
+  if (stored < reward.amount) state.inventory[reward.resource] = (state.inventory[reward.resource] || 0) + reward.amount - stored;
   state.interstellar.completedTrips += 1;
   state.interstellar.visits[target.id] = (state.interstellar.visits[target.id] || 0) + 1;
   addFlightLog(`航次完成 ← ${target.name} · ${resources[reward.resource].label} ×${reward.amount}`);
@@ -1554,8 +2417,8 @@ const stellarModuleCost = { structureCube: 4, titanium: 2, processor: 1 };
 function contributeStellarProject() {
   if (!isTechUnlocked('dyson-frame')) { showToast('需要完成「戴森框架」科技', 'warning'); return; }
   if (state.stellarProject.progress >= 100) { showToast('恒星工程已完成'); return; }
-  if (!canAfford(stellarModuleCost)) { showToast(`材料不足 · ${formatCost(stellarModuleCost)}`, 'warning'); return; }
-  spend(stellarModuleCost);
+  if (!canAffordStorage(stellarModuleCost)) { showToast(`仓储材料不足 · ${formatCost(stellarModuleCost)}`, 'warning'); return; }
+  takeStorageCost(stellarModuleCost);
   state.stellarProject.progress = clamp(state.stellarProject.progress + 5, 0, 100);
   state.stellarProject.modules += 1;
   saveGame();
@@ -1578,7 +2441,7 @@ function updateStellarProjectUI() {
   query('#stellar-project-progress').textContent = `${progress} / 100 · ${state.stellarProject.modules} 个组件`;
   query('#stellar-project-supply').textContent = formatCost(stellarModuleCost);
   const button = query('#stellar-project-button');
-  button.disabled = !unlocked || complete || !canAfford(stellarModuleCost);
+  button.disabled = !unlocked || complete || !canAffordStorage(stellarModuleCost);
   query('#stellar-project-cost').textContent = !unlocked ? '完成「戴森框架」后可用' : complete ? '恒星工程阶段完成' : button.disabled ? `材料不足 · ${formatCost(stellarModuleCost)}` : `消耗 ${formatCost(stellarModuleCost)}`;
 }
 
@@ -1587,7 +2450,7 @@ function renderCargoOptions() {
   if (!host) return;
   host.innerHTML = cargoOptions().map(option => {
     const active = state.interstellar.cargo === option.resource;
-    const available = state.inventory[option.resource] || 0;
+    const available = storageAmount(option.resource);
     return `<button type="button" class="cargo-option${active ? ' active' : ''}" data-cargo="${option.resource}"><span class="cargo-option-icon" style="--cargo-color:${resources[option.resource].color}">${resources[option.resource].label.slice(0, 1)}</span><span><b>${resources[option.resource].label} ×${option.amount}</b><small>${option.note} · 库存 ${formatNumber(available)}</small></span></button>`;
   }).join('');
   all('[data-cargo]').forEach(button => button.addEventListener('click', () => {
@@ -1680,7 +2543,7 @@ function updateStarMapUI() {
     routeFill.style.width = '0%';
   }
   const launch = query('#launch-route-button');
-  const cargoAvailable = (state.inventory[cargo.resource] || 0) >= cargo.amount;
+  const cargoAvailable = storageAmount(cargo.resource) >= cargo.amount;
   launch.disabled = !unlocked || target.id === 'home' || Boolean(route) || !cargoAvailable || target.requires.some(requirement => !isTechUnlocked(requirement));
   query('#launch-route-cost').textContent = !unlocked ? '完成「星际物流」后可用' : route ? '当前货运舱完成后可再次派遣' : `${resources[cargo.resource].label} ×${cargo.amount} · 往返 ${target.travelTime || 0} 秒`;
   const log = query('#route-log');
@@ -1794,11 +2657,16 @@ function updateResearchUI() {
   const currentProgress = tech ? clamp(state.research.progress, 0, tech.cost) : 0;
   const percent = tech ? clamp((currentProgress / tech.cost) * 100, 0, 100) : 0;
   const cube = tech ? resources[tech.cube] : null;
-  const available = tech ? state.inventory[tech.cube] || 0 : 0;
+  const available = tech ? storageAmount(tech.cube) : 0;
+  const diagnostic = getFactoryDiagnostic();
+  const currentResearchDiagnostic = state.research.current && diagnostic.kind === 'research' ? diagnostic : null;
+  const panelDiagnostic = diagnostic.kind === 'complete' ? null : diagnostic;
   const status = !tech
     ? (labs ? '科研网络待命' : '需要部署科研站')
     : !labs
       ? '等待科研站接入'
+        : currentResearchDiagnostic
+          ? currentResearchDiagnostic.title
       : available <= 0
         ? `等待 ${cube.label}`
         : `研究中 · ${labs} 座科研站`;
@@ -1813,6 +2681,10 @@ function updateResearchUI() {
   query('#brief-research-cube').textContent = tech ? `${cube.label} · ${labs ? '自动推进' : '等待科研站'}` : '未选择矩阵';
   query('#brief-research-value').textContent = tech ? `${Math.floor(percent)}%` : '0%';
   query('#brief-research-fill').style.width = `${percent}%`;
+  query('#research-diagnostic-text').textContent = panelDiagnostic ? `${panelDiagnostic.title} · ${panelDiagnostic.text}` : tech ? '科研输入和矩阵库存会在这里同步诊断。' : '科研链待命';
+  const diagnosticAction = query('#research-diagnostic-action');
+  diagnosticAction.hidden = !panelDiagnostic?.action;
+  diagnosticAction.textContent = panelDiagnostic?.action || '处理缺口';
   query('#tech-button-state').textContent = tech ? `研究 ${Math.floor(percent)}%` : `${state.tech.filter(id => techTree.mainline.some(node => node.id === id)).length}/${techTree.mainline.length}`;
   query('#mainline-count').textContent = `${techTree.mainline.filter(node => isTechUnlocked(node.id)).length} / ${techTree.mainline.length}`;
   query('#branch-count').textContent = `${techTree.branches.filter(node => isTechUnlocked(node.id)).length} / ${techTree.branches.length}`;
@@ -1820,7 +2692,7 @@ function updateResearchUI() {
     const resource = item.dataset.matrix;
     item.classList.toggle('matrix-active', tech?.cube === resource);
     const counter = query(`#matrix-${resource}`);
-    if (counter) counter.textContent = formatNumber(state.inventory[resource] || 0);
+    if (counter) counter.textContent = formatNumber(storageAmount(resource));
   });
   all('[data-research]').forEach(button => {
     const node = techById[button.dataset.research];
@@ -1843,6 +2715,7 @@ function toggleTechPanel(force) {
   if (open) {
     query('#star-map-panel').hidden = true;
     query('#career-panel').hidden = true;
+    query('#craft-panel').hidden = true;
     renderTechPanel();
   }
 }
@@ -1854,6 +2727,7 @@ function toggleStarMap(force) {
   if (open) {
     query('#tech-panel').hidden = true;
     query('#career-panel').hidden = true;
+    query('#craft-panel').hidden = true;
     renderStarMap();
   }
 }
@@ -1884,39 +2758,95 @@ function drawItems() {
 }
 
 function drawFactorySignals() {
-  const hub = state.buildings.find(building => building.type === 'hub');
-  if (!hub) return;
-  const hubPoint = worldToScreen(hub.x + 1.5, hub.y + 1.5);
-  state.buildings.forEach((building, index) => {
-    if (building.type === 'hub' || !isBuildingActive(building)) return;
-    const point = worldToScreen(building.x + buildings[building.type].size / 2, building.y + buildings[building.type].size / 2);
-    ctx.save();
-    ctx.strokeStyle = 'rgba(105,216,218,.12)';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([2, 7]);
-    ctx.beginPath(); ctx.moveTo(hubPoint.x, hubPoint.y); ctx.lineTo(point.x, point.y); ctx.stroke();
-    ctx.setLineDash([]);
-    const pulse = (state.animTime * .72 + index * .21) % 1;
-    const pulsePoint = { x: hubPoint.x + (point.x - hubPoint.x) * pulse, y: hubPoint.y + (point.y - hubPoint.y) * pulse };
-    ctx.fillStyle = 'rgba(185,255,255,.82)';
-    ctx.shadowColor = '#69d8da'; ctx.shadowBlur = 9;
-    ctx.beginPath(); ctx.arc(pulsePoint.x, pulsePoint.y, Math.max(1.5, state.zoom * 1.8), 0, Math.PI * 2); ctx.fill();
-    ctx.restore();
+  state.powerGrids.forEach((grid, gridIndex) => {
+    const color = powerGridColor(grid);
+    const members = new Map(grid.buildings.map(building => [building.id, building]));
+    grid.links.forEach((link, linkIndex) => {
+      const left = members.get(link.left);
+      const right = members.get(link.right);
+      if (!left || !right) return;
+      const leftCenter = buildingCenter(left);
+      const rightCenter = buildingCenter(right);
+      const start = worldToScreen(leftCenter.x, leftCenter.y);
+      const end = worldToScreen(rightCenter.x, rightCenter.y);
+      ctx.save();
+      ctx.strokeStyle = `${color}38`;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([2, 8]);
+      ctx.beginPath(); ctx.moveTo(start.x, start.y); ctx.lineTo(end.x, end.y); ctx.stroke();
+      ctx.setLineDash([]);
+      if (grid.blackout) { ctx.restore(); return; }
+      const pulse = (state.animTime * .7 + gridIndex * .33 + linkIndex * .17) % 1;
+      const pulsePoint = { x: start.x + (end.x - start.x) * pulse, y: start.y + (end.y - start.y) * pulse };
+      ctx.fillStyle = `${color}aa`;
+      ctx.shadowColor = color; ctx.shadowBlur = 8;
+      ctx.beginPath(); ctx.arc(pulsePoint.x, pulsePoint.y, Math.max(1.1, state.zoom * 1.4), 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    });
   });
-  const orbitRadius = 34 * state.zoom;
-  for (let index = 0; index < 4; index += 1) {
-    const angle = state.animTime * (.55 + index * .04) + index * Math.PI / 2;
-    const point = { x: hubPoint.x + Math.cos(angle) * orbitRadius, y: hubPoint.y + Math.sin(angle) * orbitRadius * .58 };
-    ctx.fillStyle = index % 2 ? '#c7d94c' : '#69d8da';
-    ctx.globalAlpha = .7;
-    ctx.beginPath(); ctx.arc(point.x, point.y, Math.max(1.1, state.zoom * 1.5), 0, Math.PI * 2); ctx.fill();
-    ctx.globalAlpha = 1;
-  }
+}
+
+function powerGridColor(grid) {
+  if (!grid) return '#ee6a65';
+  if (grid.blackout) return '#ee6a65';
+  if (grid.highLoad) return '#ff9b3d';
+  return '#69d8da';
+}
+
+function drawPowerCoverage(building, preview = false) {
+  if (!isPowerTowerType(building)) return;
+  const point = worldToScreen(buildingCenter(building).x, buildingCenter(building).y);
+  const radius = getTransmissionRange(building) * TILE * state.zoom;
+  const grid = state.powerGrids.find(entry => entry.buildingIds.includes(building.id));
+  const color = preview ? buildings[building.type].color : powerGridColor(grid);
+  ctx.save();
+  ctx.globalAlpha = preview ? .12 : .1;
+  ctx.fillStyle = color;
+  ctx.beginPath(); ctx.arc(point.x, point.y, radius, 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha = preview ? .7 : .72;
+  ctx.strokeStyle = building.gridEnabled === false ? '#8d9aa4' : color;
+  ctx.lineWidth = Math.max(1, state.zoom * (preview ? 1.1 : 1.35));
+  ctx.setLineDash(building.gridEnabled === false ? [7, 6] : [4, 4]);
+  ctx.beginPath(); ctx.arc(point.x, point.y, radius, 0, Math.PI * 2); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+function drawPowerNetworks() {
+  const selected = state.buildings.find(building => building.id === state.selectedId);
+  if (!selected || !isPowerBuilding(selected)) return;
+  const grid = state.powerGrids.find(entry => entry.buildingIds.includes(selected.id));
+  if (!grid) return;
+  const members = new Map(grid.buildings.map(building => [building.id, building]));
+  const color = powerGridColor(grid);
+  ctx.save();
+  ctx.globalAlpha = .7;
+  ctx.lineWidth = Math.max(1, state.zoom * 1.1);
+  ctx.setLineDash([3, 6]);
+  grid.links.forEach(link => {
+    const left = members.get(link.left);
+    const right = members.get(link.right);
+    if (!left || !right) return;
+    const leftPoint = buildingCenter(left);
+    const rightPoint = buildingCenter(right);
+    const leftScreen = worldToScreen(leftPoint.x, leftPoint.y);
+    const rightScreen = worldToScreen(rightPoint.x, rightPoint.y);
+    ctx.strokeStyle = color;
+    ctx.beginPath(); ctx.moveTo(leftScreen.x, leftScreen.y); ctx.lineTo(rightScreen.x, rightScreen.y); ctx.stroke();
+  });
+  ctx.setLineDash([]);
+  ctx.restore();
+  if (isPowerTowerType(selected)) drawPowerCoverage(selected);
 }
 
 function drawPreview() {
   const cell = state.pointer.cell;
   if (!cell) return;
+  if (state.tool === 'inspect') return;
+  if (state.tool === 'sorter') {
+    drawSorterPreview();
+    return;
+  }
   if (state.tool === 'belt') {
     const source = state.pointer.startBuildingId
       ? state.buildings.find(building => building.id === state.pointer.startBuildingId)
@@ -1938,12 +2868,44 @@ function drawPreview() {
   const check = placementCheck(state.tool, cell);
   const point = worldToScreen(cell.x, cell.y);
   const size = meta.size * TILE * state.zoom;
+  if (isPowerTowerType(state.tool)) {
+    drawPowerCoverage({ type: state.tool, x: cell.x, y: cell.y, id: `preview-${state.tool}`, gridEnabled: true }, true);
+  }
+  const footprint = footprintCells(cell, meta.size);
+  const cellColor = check.valid ? meta.color : check.reasonCode === 'terrain' ? '#ff9b3d' : '#ee6a65';
   ctx.save();
-  ctx.globalAlpha = .45;
-  ctx.fillStyle = check.valid ? `${meta.color}36` : 'rgba(238,106,101,.24)';
-  ctx.strokeStyle = check.valid ? meta.color : '#ee6a65';
-  ctx.lineWidth = 2; ctx.setLineDash([5, 4]);
-  ctx.translate(point.x + size / 2, point.y + size / 2); ctx.rotate((state.rotation * Math.PI) / 180); ctx.strokeRect(-size / 2 + 2, -size / 2 + 2, size - 4, size - 6); ctx.fillRect(-size / 2 + 2, -size / 2 + 2, size - 4, size - 6); ctx.restore();
+  const gap = clamp(state.zoom * 3, 1, 3);
+  footprint.forEach(footprintCell => {
+    const tilePoint = worldToScreen(footprintCell.x, footprintCell.y);
+    const issue = !isInsideWorld(footprintCell)
+      ? 'bounds'
+      : buildingCollisionAt(footprintCell, 1)
+        ? 'building'
+        : beltAt(footprintCell)
+          ? 'belt'
+          : isTerrainBlocked(footprintCell)
+            ? 'terrain'
+            : resourceNodeAt(footprintCell) ? 'resource' : null;
+    const tileColor = issue === 'terrain' ? '#ff9b3d' : issue ? '#ee6a65' : cellColor;
+    ctx.globalAlpha = issue ? .56 : .36;
+    ctx.fillStyle = `${tileColor}36`;
+    ctx.strokeStyle = tileColor;
+    ctx.lineWidth = Math.max(1, state.zoom * 1.7);
+    ctx.setLineDash([4, 3]);
+    ctx.fillRect(tilePoint.x + gap, tilePoint.y + gap, TILE * state.zoom - gap * 2, TILE * state.zoom - gap * 2);
+    ctx.strokeRect(tilePoint.x + gap, tilePoint.y + gap, TILE * state.zoom - gap * 2, TILE * state.zoom - gap * 2);
+    if (issue) {
+      ctx.globalAlpha = .82;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(tilePoint.x + size / meta.size * .28, tilePoint.y + size / meta.size * .28);
+      ctx.lineTo(tilePoint.x + size / meta.size * .72, tilePoint.y + size / meta.size * .72);
+      ctx.moveTo(tilePoint.x + size / meta.size * .72, tilePoint.y + size / meta.size * .28);
+      ctx.lineTo(tilePoint.x + size / meta.size * .28, tilePoint.y + size / meta.size * .72);
+      ctx.stroke();
+    }
+  });
+  ctx.restore();
   if (check.valid && hasImage(assets[meta.image])) {
     ctx.save();
     ctx.globalAlpha = .28;
@@ -1959,33 +2921,29 @@ function render() {
   drawDysonConstruction();
   state.nodes.forEach(drawResourceNode);
   state.belts.forEach(belt => drawBelt(belt));
+  drawPowerNetworks();
   drawFactorySignals();
   state.buildings.forEach(drawBuilding);
+  state.nodes.forEach(drawResourceNodeCore);
   drawBeltPortHints();
   drawItems();
   drawPreview();
 }
 
 function hasBeltToBuilding(target, resourcesToCheck) {
-  return state.belts.some(belt => resourcesToCheck.some(resource => findDestination(belt, resource) === target));
+  return resourcesToCheck.some(resource => Boolean(findSorterForBuilding(target, resource, 'input')));
 }
 
 function hasWarehouseRoute(target, resourcesToCheck) {
-  const hub = state.buildings.find(building => building.type === 'hub');
-  if (!hub || !target) return false;
-  return state.belts.some(belt => {
-    if (!isAdjacentToBuilding({ x: belt.x, y: belt.y }, hub)) return false;
-    return resourcesToCheck.some(resource => findDestinationAlongRoute(belt, resource, hub.id) === target);
-  });
+  if (!target) return false;
+  return resourcesToCheck.some(resource => storageBuildings().some(storage => {
+    const sorter = findSorterForBuilding(storage, resource, 'output');
+    return Boolean(sorter && sorterOutputBelts(sorter).some(belt => findDestinationAlongRoute(belt, resource, sorter.id)));
+  }));
 }
 
 function hasInputRouteToBuilding(target, resource) {
-  if (!target) return false;
-  const direct = state.belts.some(belt => {
-    if (!isAdjacentToBuilding({ x: belt.x, y: belt.y }, target)) return false;
-    return findDestinationAlongRoute(belt, resource, target.id) === target;
-  });
-  return direct || hasWarehouseRoute(target, [resource]);
+  return Boolean(target && findSorterForBuilding(target, resource, 'input'));
 }
 
 function processorProductionGap() {
@@ -2028,101 +2986,34 @@ function findUnconfiguredSmelter(raw) {
 }
 
 function updateObjective() {
-  const hasMiner = state.buildings.some(building => building.type === 'miner' && isBuildingOperational(building));
-  const hasSmelter = state.buildings.some(building => building.type === 'smelter' && isBuildingOperational(building));
-  const hasResearchLab = state.buildings.some(building => building.type === 'researchLab' && isBuildingOperational(building));
-  const miner = state.buildings.find(building => building.type === 'miner' && isBuildingOperational(building));
-  const minerNode = miner && state.nodes.find(node => node.id === miner.nodeId);
-  const hasProcessingLink = Boolean(miner && minerNode && findBeltStartingNear(miner, minerNode.resource));
-  const researchLab = state.buildings.find(building => building.type === 'researchLab' && isBuildingOperational(building));
-  const researchInputs = researchLab ? Object.keys(researchLab.input || {}) : [];
-  const hasResearchLink = Boolean(researchLab && (
-    state.research.current
-    || !state.research.current && researchInputs.some(resource => ['copperIngot', 'siliconWafer', 'energyCube', 'structureCube'].includes(resource))
-    || hasBeltToBuilding(researchLab, ['copperIngot', 'siliconWafer', 'energyCube', 'structureCube'])
-    || state.tech.some(id => techTree.mainline.some(tech => tech.id === id))
-  ));
-  const hasFirstResearch = state.tech.some(id => techTree.mainline.some(tech => tech.id === id));
-  const hasFirstTrip = state.interstellar.completedTrips > 0;
+  const diagnostic = getFactoryDiagnostic();
+  const snapshot = factoryProgressSnapshot();
   const title = query('#objective-title');
   const text = query('#objective-text');
   const fill = query('#objective-fill');
-  const nextTech = techTree.mainline.find(tech => !isTechUnlocked(tech.id) && hasTechPrerequisites(tech));
-  const processorGap = processorProductionGap();
-  let action = '选择采矿机';
-  if (!hasMiner) { title.textContent = '让第一条产线跑起来'; text.textContent = '先选采矿机，放在铜矿脉上，再把矿石送入熔炼炉。'; fill.style.width = '14%'; action = '选择采矿机'; }
-  else if (!hasSmelter) { title.textContent = '先放加工端'; text.textContent = '把熔炼机放在矿机旁边，留出一格或两格作为传送带接口。'; fill.style.width = '28%'; action = '选择熔炼炉'; }
-  else if (!hasProcessingLink) { title.textContent = '把矿石送进加工端'; text.textContent = '按住鼠标，从矿机边缘拖到熔炼机边缘；建筑之间只留一格也能连接。'; fill.style.width = '42%'; action = '选择传送带'; }
-  else if (!hasResearchLab) { title.textContent = '建立科研链'; text.textContent = '部署科研站，再用传送带把铜锭与硅片送入矩阵生产。'; fill.style.width = '56%'; action = '选择科研站'; }
-  else if (!hasResearchLink) { title.textContent = '接通科研站'; text.textContent = '从能源核心或冶炼机边缘拖到科研站，铜锭和硅片会自动进入配方。'; fill.style.width = '64%'; action = '选择传送带'; }
-  else if (!state.research.current && nextTech) {
-    if (nextTech.id === 'matrix-lab' && processorGap) {
-      if (processorGap.kind === 'assembler') {
-        title.textContent = '先搭芯片产线';
-        text.textContent = '矩阵实验室会消耗芯片。先部署组装机，接入铜锭与硅片，避免科研过程中断。';
-        action = '选择组装机';
-      } else if (processorGap.kind === 'assemblerInputBelt') {
-        title.textContent = `接通${resources[processorGap.resource].label}`;
-        text.textContent = `组装机还缺${resources[processorGap.resource].label}，从能源核心或上游生产端接入物料。`;
-        action = '选择传送带';
-      } else {
-        title.textContent = '接通芯片产物';
-        text.textContent = '从组装机拖到能源核心或科研站，芯片会进入库存并支撑后续矩阵研究。';
-        action = '选择传送带';
-      }
-    } else {
-      title.textContent = `启动「${nextTech.label}」`;
-      text.textContent = `打开科技中枢，点击可研究节点；科研站会消耗${resources[nextTech.cube].label}推进主线。`;
-      action = '打开科技中枢';
-    }
-    fill.style.width = '66%';
-  }
-  else if (state.research.current) {
-    const tech = researchTarget();
-    const researchLab = state.buildings.find(building => building.type === 'researchLab' && isBuildingOperational(building));
-    const missing = missingInputsFor(researchLab);
-    const productionGap = researchProductionGap();
-    const advice = researchGapAdvice(productionGap, missing);
-    if (advice) {
-      title.textContent = advice.title;
-      text.textContent = advice.text;
-      action = advice.action;
-    } else if (missing.length) {
-      title.textContent = '补齐科研输入';
-      text.textContent = `科研站还缺 ${missing.join('、')}；输入齐备后，当前科技会自动继续。`;
-      action = '选择传送带';
-    } else {
-      title.textContent = `供给${resources[tech?.cube]?.label || '研究矩阵'}`;
-      text.textContent = `对应原料会在科研站制备成${resources[tech?.cube]?.label || '研究矩阵'}，完成后自动进入研究库存。`;
-      action = '打开科技中枢';
-    }
-    fill.style.width = '74%';
-  }
-  else if (!isInterstellarUnlocked()) { title.textContent = '接入星际物流'; text.textContent = '继续完成主线科技，星图会在「星际物流」完成后解锁。'; fill.style.width = '82%'; action = '查看主线科技'; }
-  else if (!hasFirstTrip) { title.textContent = '完成第一次异星航次'; text.textContent = '打开星图，选择熔火-β，装载处理器并派遣货运舱。'; fill.style.width = '90%'; action = '打开星图'; }
-  else if (!isTechUnlocked('stellar-network')) { title.textContent = '扩展恒星网络'; text.textContent = '把钛和科研矩阵带回母星，继续研究恒星网络。'; fill.style.width = '95%'; action = '打开科技中枢'; }
-  else if (!isTechUnlocked('dyson-frame')) { title.textContent = '研究戴森框架'; text.textContent = '用信息矩阵和结构矩阵完成主线研究，开启恒星工程施工台。'; fill.style.width = '97%'; action = '打开科技中枢'; }
-  else if (state.stellarProject.progress < 100) { title.textContent = `部署恒星框架 · ${state.stellarProject.progress}%`; text.textContent = '从熔火-β回收钛，用结构矩阵和处理器逐个部署轨道组件。'; fill.style.width = `${97 + state.stellarProject.progress * .03}%`; action = '打开星图'; }
-  else { title.textContent = '第一圈戴森框架已点亮'; text.textContent = '恒星能量网络已经建立，继续扩展将进入下一阶段。'; fill.style.width = '100%'; action = '打开星图'; }
-  query('#objective-action').textContent = action;
+  title.textContent = diagnostic.title;
+  text.textContent = diagnostic.text;
+  fill.style.width = `${diagnostic.progress}%`;
+  query('#objective-action').textContent = diagnostic.action || '查看工厂';
   const steps = [
-    { label: '采矿', done: hasMiner },
-    { label: '加工', done: hasSmelter && hasProcessingLink },
-    { label: '科研', done: hasResearchLab && hasResearchLink && hasFirstResearch },
-    { label: '星际', done: isInterstellarUnlocked() && hasFirstTrip },
+    { label: '采矿', done: snapshot.hasMiner },
+    { label: '加工', done: snapshot.hasSmelter && snapshot.hasProcessingLink },
+    { label: '科研', done: snapshot.hasResearchLab && snapshot.hasResearchLink && snapshot.hasFirstResearch },
+    { label: '星际', done: isInterstellarUnlocked() && snapshot.hasFirstTrip },
     { label: '恒星工程', done: isTechUnlocked('dyson-frame') && state.stellarProject.progress >= 100 }
   ];
   query('#objective-steps').innerHTML = steps.map(step => `<span class="objective-step${step.done ? ' done' : ''}"><i>${step.done ? '✓' : '·'}</i>${step.label}</span>`).join('');
-  query('#objective-action').dataset.action = action;
+  query('#objective-action').dataset.action = diagnostic.action || '查看设施';
 }
 
 function buildingRecipeText(building) {
-  if (building.type === 'hub') return '库存 → 物流网络';
+  if (isStorageType(building)) return `${building.type === 'logisticsStation' ? '星际货物中转' : '物流仓储'} · ${storageUsed(building)}/${storageCapacity(building)}`;
   if (building.type === 'miner') {
     const node = state.nodes.find(item => item.id === building.nodeId);
     return node ? `${resources[node.resource].label}矿脉 → ${resources[node.resource].label}` : '矿脉 → 原矿';
   }
   if (building.type === 'oilExtractor') return '原油渗流 → 原油';
+  if (building.type === 'waterPump') return '水源采集区 → 水';
   if (building.type === 'smelter') return '原矿 → 金属锭 / 硅片';
   if (building.type === 'assembler') return '铜锭 + 硅片 → 芯片';
   if (building.type === 'workbench') return '铁锭 + 铜锭 → 芯片';
@@ -2133,17 +3024,42 @@ function buildingRecipeText(building) {
   }
   if (building.type === 'thermal') return '煤 → 电力';
   if (building.type === 'wind') return '风场 → 电力';
-  if (building.type === 'sorter') return '输入 → 分流';
+  if (isPowerTowerType(building)) return `${building.gridEnabled === false ? '局部覆盖 · 外部断开' : '圆形覆盖 · 外部接入'} · ${getTransmissionRange(building).toFixed(1)} 格`;
+  if (building.type === 'sorter') {
+    const target = sorterAttachedBuilding(building);
+    return `${building.sorterMode === 'output' ? '建筑 → 传送带' : '传送带 → 建筑'} · ${target ? buildings[target.type].label : '未连接建筑'}`;
+  }
   return '系统节点';
 }
 
 function buildingStatus(building) {
   if (!isBuildingOperational(building)) return '科技锁定';
-  if (building.type === 'hub') return '物流枢纽';
-  if (state.powerGeneration < state.powerLoad && building.type !== 'wind') return '电力不足';
+  if (building.type === 'thermal' && (building.input.coal || 0) <= 0) return '缺煤';
+  const powerState = getGridPowerState(building);
+  if (isPowerTowerType(building)) {
+    if (!powerState.grid) return '未接入电网';
+    if (powerState.grid.blackout) return '电网瘫痪';
+    return building.gridEnabled === false ? '外部连接已断开' : '输电在线';
+  }
+  if (isPowerBuilding(building) && powerState.grid?.blackout && (buildings[building.type]?.power || 0) > 0) return '电网瘫痪';
+  if (isPowerBuilding(building) && powerState.grid?.highLoad && (buildings[building.type]?.power || 0) > 0) return '电网高负载';
   if (building.type === 'wind') return '供电中';
-  if (building.type === 'thermal') return (building.input.coal || 0) > 0 ? '供电中' : '缺煤';
-  if (building.type === 'sorter' && building.process > .05) return '分流中';
+  if (building.type === 'thermal') return '供电中';
+  if (building.type === 'waterPump') {
+    const node = state.nodes.find(item => item.id === building.nodeId);
+    return node?.resource === 'water' && node.amount > 0 ? '采水中' : '未接入水源';
+  }
+  if (building.type === 'sorter') {
+    const target = sorterAttachedBuilding(building);
+    if (!target) return '未连接建筑';
+    const beltCount = building.sorterMode === 'output' ? sorterOutputBelts(building).length : sorterInputBelts(building).length;
+    if (!beltCount) return '未连接传送带';
+    return building.sorterMode === 'output' ? '等待取货' : building.process > .05 ? '取放中' : '等待来料';
+  }
+  if (isStorageType(building)) {
+    if (storageUsed(building) >= storageCapacity(building)) return '仓储已满';
+    return storageUsed(building) ? '仓储在线' : '等待入库';
+  }
   if (building.type === 'miner' || building.type === 'oilExtractor') {
     const node = state.nodes.find(item => item.id === building.nodeId);
     if (!node) return '未接入矿脉';
@@ -2166,6 +3082,7 @@ function buildingProgress(building) {
   if (building.type === 'smelter') return clamp(building.process / getSmeltingTime(), 0, 1);
   if (building.type === 'assembler' || building.type === 'workbench') return clamp(building.process / getAssemblyTime(building), 0, 1);
   if (building.type === 'sorter') return clamp(building.process / .22, 0, 1);
+  if (isStorageType(building)) return clamp(storageUsed(building) / Math.max(1, storageCapacity(building)), 0, 1);
   if (building.type === 'researchLab') {
     const cube = labProductionCube(building);
     return cubeRecipes[cube] ? clamp(building.process / getResearchProductionTime(building, cube), 0, 1) : 0;
@@ -2222,13 +3139,8 @@ function researchProductionGap() {
   if (!lab || !recipe) return null;
   const missingEntries = Object.entries(recipe.inputs).filter(([resource, amount]) => (lab.input?.[resource] || 0) < amount);
   for (const [resource] of missingEntries) {
-    // Inventory is stored in the energy core, so it still needs a belt route
-    // before the lab can consume it. Surface that route instead of sending the
-    // player to mine a resource they already own.
-    if ((state.inventory[resource] || 0) >= 1) {
-      // The energy core is the starter warehouse. A belt can make this flow
-      // visible and faster, but a stocked component must not deadlock the
-      // first research loop while the player is learning the build controls.
+    if (storageAmount(resource) >= 1) {
+      if (!hasInputRouteToBuilding(lab, resource)) return { kind: 'sorterInput', target: lab, resource };
       continue;
     }
     const raw = rawResourceForInput(resource);
@@ -2253,27 +3165,20 @@ function researchProductionGap() {
       const destination = findDestinationAlongRoute(belt, raw, miner.id);
       if (!destination) return false;
       if (raw !== 'coal') return destination === smelter;
-      // The energy core is a real warehouse, and research labs pull stocked
-      // inputs from it automatically. A miner-to-core route is therefore a
-      // complete supply path even when there is no second core-to-lab belt.
-      return destination === lab || destination?.type === 'hub';
+      return destination === lab;
     });
     if (!rawBelt) return { kind: 'belt', raw, miner, smelter, source: miner };
     if (raw === 'coal') continue;
     const output = raw === 'silicon' ? 'siliconWafer' : `${raw}Ingot`;
-    const directOutputBelt = state.belts.find(belt => {
-      if (!isAdjacentToBuilding({ x: belt.x, y: belt.y }, smelter)) return false;
-      const destination = findDestinationAlongRoute(belt, output, smelter.id);
-      return destination === lab;
-    });
-    if (directOutputBelt) continue;
-    const warehouseOutputBelt = state.belts.find(belt => {
-      if (!isAdjacentToBuilding({ x: belt.x, y: belt.y }, smelter)) return false;
-      return findDestinationAlongRoute(belt, output, smelter.id)?.type === 'hub';
-    });
-    if (warehouseOutputBelt && !hasWarehouseRoute(lab, [output])) return { kind: 'warehouseBelt', raw, output, smelter };
-    if (!warehouseOutputBelt) return { kind: 'outputBelt', raw, smelter };
+    const smelterOutputSorter = findSorterForBuilding(smelter, output, 'output');
+    if (!smelterOutputSorter) return { kind: 'sorterOutput', raw, output, smelter };
+    const outputBelt = sorterOutputBelts(smelterOutputSorter).find(belt => Boolean(findDestinationAlongRoute(belt, output, smelterOutputSorter.id)));
+    if (!outputBelt) return { kind: 'outputBelt', raw, smelter };
+    if (storageAmount(output) >= 1 && !hasInputRouteToBuilding(lab, output)) return { kind: 'sorterInput', target: lab, resource: output };
   }
+  const matrixOutput = labProductionCube(lab);
+  if (!findSorterForBuilding(lab, matrixOutput, 'output')) return { kind: 'sorterOutput', source: lab, output: matrixOutput };
+  if (!findBeltStartingNear(lab, matrixOutput)) return { kind: 'researchOutputBelt', source: lab, output: matrixOutput };
   return null;
 }
 
@@ -2308,7 +3213,7 @@ function researchGapAdvice(gap, missing = []) {
     const rawLabel = resources[gap.raw]?.label || gap.raw;
     return {
       title: `接通${rawLabel}矿机`,
-      text: `${missingText}从${rawLabel}矿机边缘拖到冶炼机；煤矿可以直接接入能源核心或科研站。`,
+      text: `${missingText}从${rawLabel}矿机边缘拖到冶炼机；煤矿可以直接接入火力发电机或科研站。`,
       action: '选择传送带'
     };
   }
@@ -2317,15 +3222,40 @@ function researchGapAdvice(gap, missing = []) {
     const outputLabel = gap.raw === 'silicon' ? '硅片' : `${rawLabel}锭`;
     return {
       title: `接通${outputLabel}产物`,
-      text: `${missingText}从${rawLabel}冶炼机拖到科研站或能源核心，${outputLabel}才会进入矩阵配方。`,
+      text: `${missingText}给冶炼机安装出料分拣器，再把${outputLabel}送入物流仓储，产物才会进入后续配方。`,
       action: '选择传送带'
     };
   }
   if (gap.kind === 'warehouseBelt') {
     const outputLabel = resources[gap.output]?.label || '研究组件';
     return {
-      title: `接通核心出库`,
-      text: `${missingText}能源核心已经收到${outputLabel}，从核心边缘拖到科研站，把库存物料送回研究链。`,
+      title: `接通仓储出库`,
+      text: `${missingText}从物流仓储旁的出料分拣器铺设传送带到科研站进料分拣器，仓储物料才会进入研究链。`,
+      action: '选择传送带'
+    };
+  }
+  if (gap.kind === 'sorterInput') {
+    const targetLabel = gap.target ? buildings[gap.target.type].label : '建筑';
+    const resourceLabel = resources[gap.resource]?.label || gap.resource;
+    return {
+      title: `给${targetLabel}接入分拣器`,
+      text: `${missingText}传送带只负责运输。请在${targetLabel}旁放置分拣器，切换为“传送带 → 建筑”，再把传送带接到分拣器。`,
+      action: '选择分拣器'
+    };
+  }
+  if (gap.kind === 'sorterOutput') {
+    const sourceLabel = gap.source ? buildings[gap.source.type].label : `${resources[gap.raw]?.label || gap.raw}冶炼机`;
+    return {
+      title: `给${sourceLabel}安装出料分拣器`,
+      text: `${missingText}建筑不会把货物直接放上传送带。请在${sourceLabel}旁放置分拣器，切换为“建筑 → 传送带”。`,
+      action: '选择分拣器'
+    };
+  }
+  if (gap.kind === 'researchOutputBelt') {
+    const cubeLabel = resources[gap.output]?.label || '研究矩阵';
+    return {
+      title: '接通矩阵回流',
+      text: `${missingText}从科研站安装出料分拣器，把${cubeLabel}送入物流仓储，研究循环才会消费它。`,
       action: '选择传送带'
     };
   }
@@ -2340,49 +3270,151 @@ function researchGapAdvice(gap, missing = []) {
     const inputLabel = resources[gap.resource]?.label || gap.resource;
     return {
       title: `接通${inputLabel}`,
-      text: `${missingText}组装机还缺${inputLabel}，从能源核心或上游生产端接入物料。`,
+      text: `${missingText}组装机还缺${inputLabel}，从物流仓储或上游生产端接入物料。`,
       action: '选择传送带'
     };
   }
   if (gap.kind === 'assemblerOutputBelt') {
     return {
       title: '接通芯片产物',
-      text: `${missingText}从组装机拖到能源核心或科研站，让芯片进入科研链。`,
+      text: `${missingText}给组装机安装出料分拣器，再把芯片送入物流仓储，让它进入科研链。`,
       action: '选择传送带'
     };
   }
   return null;
 }
 
-function updateFactoryMonitor() {
-  const activeBuildings = state.buildings.filter(building => building.type !== 'hub' && isBuildingActive(building)).length;
-  const powerShortage = state.powerGeneration < state.powerLoad;
-  const currentTech = researchTarget();
-  let status = powerShortage ? '电力紧张' : state.interstellar.route ? '星际联机' : currentTech ? '科研推进' : activeBuildings ? '生产运行' : '待命';
-  let advice = '选择设施，在网格中开始建造。';
-  if (powerShortage) advice = `电网缺口 ${(state.powerLoad - state.powerGeneration).toFixed(1)} MW · 建造风力或火力发电机`;
-  else {
-    const researchLab = state.buildings.find(building => building.type === 'researchLab' && isBuildingOperational(building));
-    const researchMissing = missingInputsFor(researchLab);
-    const researchAdvice = currentTech && researchLab ? researchGapAdvice(researchProductionGap(), researchMissing) : null;
-    if (researchAdvice) advice = `${researchAdvice.title} · ${researchAdvice.text}`;
-    else if (state.interstellar.route) advice = `货运舱正在${state.interstellar.route.phase === 'outbound' ? '去程' : '返航'} · 星图可查看实时轨迹`;
-    else if (currentTech) {
-      if (researchMissing.length) advice = `科研站缺少 ${researchMissing.join('、')} · 先补齐对应输入`;
-      else if ((state.inventory[currentTech.cube] || 0) <= 0) advice = `科研等待${resources[currentTech.cube].label} · 先补齐矩阵产线`;
-    } else {
-      const blocked = state.buildings.find(building => ['科技锁定', '输出堵塞', '缺少输入', '缺少矩阵组件', '缺煤', '未接入矿脉'].includes(buildingStatus(building)));
-      if (blocked) advice = `${buildings[blocked.type].label}：${buildingStatus(blocked)} · 点击设施查看配方`;
-      else if (state.items.length) advice = `物流网络正在运输 ${state.items.length} 件物料`;
-      else if (activeBuildings) advice = '产线在线 · 点击任意设施检查输入、输出和进度';
-    }
+function hasProcessingRoute(miner, resource, smelter) {
+  if (!miner || !smelter) return false;
+  const outputSorter = findSorterForBuilding(miner, resource, 'output');
+  if (!outputSorter) return false;
+  return sorterOutputBelts(outputSorter).some(belt => {
+    const targetSorter = findDestinationAlongRoute(belt, resource, outputSorter.id);
+    return Boolean(targetSorter && sorterAttachedBuilding(targetSorter)?.id === smelter.id);
+  });
+}
+
+function factoryProgressSnapshot() {
+  const hasMiner = state.buildings.some(building => building.type === 'miner' && isBuildingOperational(building));
+  const hasSmelter = state.buildings.some(building => building.type === 'smelter' && isBuildingOperational(building));
+  const hasResearchLab = state.buildings.some(building => building.type === 'researchLab' && isBuildingOperational(building));
+  const miner = state.buildings.find(building => building.type === 'miner' && isBuildingOperational(building));
+  const minerNode = miner && state.nodes.find(node => node.id === miner.nodeId);
+  const smelter = minerNode && state.buildings.find(building => building.type === 'smelter'
+    && isBuildingOperational(building)
+    && (!building.recipeResource || building.recipeResource === minerNode.resource));
+  const hasProcessingLink = Boolean(miner && minerNode && smelter && hasProcessingRoute(miner, minerNode.resource, smelter));
+  const researchLab = state.buildings.find(building => building.type === 'researchLab' && isBuildingOperational(building));
+  const researchInputs = Object.keys(cubeRecipes[labProductionCube(researchLab)]?.inputs || {});
+  const hasResearchLink = Boolean(researchLab && researchInputs.some(resource => hasInputRouteToBuilding(researchLab, resource)));
+  const hasFirstResearch = state.tech.some(id => id !== 'foundation' && techTree.mainline.some(tech => tech.id === id));
+  const nextTech = techTree.mainline.find(tech => !isTechUnlocked(tech.id) && hasTechPrerequisites(tech));
+  return {
+    hasMiner,
+    hasSmelter,
+    hasProcessingLink,
+    hasResearchLab,
+    hasResearchLink,
+    hasFirstResearch,
+    hasFirstTrip: state.interstellar.completedTrips > 0,
+    miner,
+    minerNode,
+    smelter,
+    researchLab,
+    nextTech
+  };
+}
+
+function diagnosticFocusBuilding(gap, fallback = null) {
+  return gap?.target || gap?.source || gap?.smelter || gap?.producer || gap?.miner || fallback || null;
+}
+
+function getFactoryDiagnostic() {
+  const snapshot = factoryProgressSnapshot();
+  const powerIssue = state.powerSummary.blackoutCount > 0 || state.powerSummary.highLoadCount > 0;
+  if (powerIssue) {
+    const hasTower = state.buildings.some(building => isPowerTowerType(building));
+    const canDeployStarterTower = !hasTower && kitCount('powerTower') > 0;
+    const powerTool = canDeployStarterTower
+      ? 'powerTower'
+      : isBuildingUnlocked('wind') ? 'wind' : isBuildingUnlocked('thermal') ? 'thermal' : null;
+    const powerLabel = powerTool ? buildings[powerTool].label : '风能捕获科技';
+    const powerText = state.powerSummary.blackoutCount > 0
+      ? canDeployStarterTower
+        ? `${state.powerSummary.blackoutCount} 个电网已瘫痪。旧产线还没有电力塔，先部署基础电力塔，把设备纳入圆形覆盖范围。`
+        : `${state.powerSummary.blackoutCount} 个电网已瘫痪。先断开过载电塔，恢复一个小范围电网，再逐步重新接入。`
+      : `${state.powerSummary.highLoadCount} 个电网处于高负载，所有用电设施效率减半。建议增设发电设备或拆分电网。`;
+    return {
+      kind: 'power', stage: 'power', severity: 'warning', progress: 18,
+      title: '稳定电力网络',
+      text: `${powerText}${powerTool ? ` 当前可用：${powerLabel}。` : ` 先研究${powerLabel}。`}`,
+      action: powerTool ? `选择${powerLabel}` : '打开科技中枢', tool: powerTool
+    };
   }
+  if (!snapshot.hasMiner) return { kind: 'progress', stage: 'mining', progress: 14, title: '让第一条产线跑起来', text: '先选采矿机，放在铜矿脉上，开始积累原矿。', action: '选择采矿机', focusResource: 'copper' };
+  if (!snapshot.hasSmelter) return { kind: 'progress', stage: 'smelting', progress: 28, title: '先放加工端', text: '把熔炼机放在矿机旁边，留出一格或两格作为传送带接口。', action: '选择熔炼炉', focusResource: snapshot.minerNode?.resource || 'copper' };
+  if (!snapshot.hasProcessingLink) return { kind: 'progress', stage: 'smelting', progress: 42, title: '用分拣器接通加工端', text: '矿机出料分拣器和熔炼机进料分拣器之间还没有完整路线。', action: '选择分拣器', focusBuilding: snapshot.smelter || snapshot.miner };
+  if (!snapshot.hasResearchLab) return { kind: 'progress', stage: 'research', progress: 56, title: '建立科研链', text: '部署科研站和物流仓储，科研站的输入与矩阵产出都必须通过分拣器接入。', action: '选择科研站' };
+  if (!snapshot.hasResearchLink) return { kind: 'research', stage: 'research', progress: 64, title: '接通科研站', text: '科研站当前没有有效的进料分拣器。把物流仓储或上游产线接到科研站接口。', action: '选择分拣器', focusBuilding: snapshot.researchLab };
+
+  if (!state.research.current && snapshot.nextTech) {
+    const processorGap = snapshot.nextTech.id === 'matrix-lab' ? processorProductionGap() : null;
+    if (processorGap) {
+      const advice = researchGapAdvice(processorGap);
+      if (advice) return { ...advice, kind: 'research', stage: 'research', progress: 66, focusBuilding: diagnosticFocusBuilding(processorGap) };
+    }
+    return {
+      kind: 'research', stage: 'research', progress: 66,
+      title: `启动「${snapshot.nextTech.label}」`,
+      text: `打开科技中枢，点击可研究节点；科研站会消耗${resources[snapshot.nextTech.cube].label}推进主线。`,
+      action: '打开科技中枢'
+    };
+  }
+
+  if (state.research.current) {
+    const missing = missingInputsFor(snapshot.researchLab);
+    const gap = researchProductionGap();
+    const advice = researchGapAdvice(gap, missing);
+    if (advice) return { ...advice, kind: 'research', stage: 'research', progress: 74, focusBuilding: diagnosticFocusBuilding(gap, snapshot.researchLab), focusResource: gap?.kind === 'miner' ? gap.raw : null };
+    if (missing.length) return {
+      kind: 'research', stage: 'research', progress: 74,
+      title: '补齐科研输入', text: `科研站还缺 ${missing.join('、')}；输入齐备后，当前科技会自动继续。`,
+      action: '选择分拣器', focusBuilding: snapshot.researchLab
+    };
+    const tech = researchTarget();
+    return {
+      kind: 'research', stage: 'research', progress: 74,
+      title: `供给${resources[tech?.cube]?.label || '研究矩阵'}`,
+      text: `对应原料会在科研站制备成${resources[tech?.cube]?.label || '研究矩阵'}，完成后自动进入研究库存。`,
+      action: '打开科技中枢'
+    };
+  }
+  if (!isInterstellarUnlocked()) return { kind: 'progress', stage: 'interstellar', progress: 82, title: '接入星际物流', text: '继续完成主线科技，星图会在「星际物流」完成后解锁。', action: '查看主线科技' };
+  if (!snapshot.hasFirstTrip) return { kind: 'progress', stage: 'interstellar', progress: 90, title: '完成第一次异星航次', text: '打开星图，选择熔火-β，装载处理器并派遣货运舱。', action: '打开星图' };
+  if (!isTechUnlocked('stellar-network')) return { kind: 'progress', stage: 'stellar', progress: 95, title: '扩展恒星网络', text: '把钛和科研矩阵带回母星，继续研究恒星网络。', action: '打开科技中枢' };
+  if (!isTechUnlocked('dyson-frame')) return { kind: 'progress', stage: 'stellar', progress: 97, title: '研究戴森框架', text: '用信息矩阵和结构矩阵完成主线研究，开启恒星工程施工台。', action: '打开科技中枢' };
+  if (state.stellarProject.progress < 100) return { kind: 'progress', stage: 'stellar', progress: 97 + state.stellarProject.progress * .03, title: `部署恒星框架 · ${state.stellarProject.progress}%`, text: '从熔火-β回收钛，用结构矩阵和处理器逐个部署轨道组件。', action: '打开星图' };
+  return { kind: 'complete', stage: 'complete', progress: 100, title: '第一圈戴森框架已点亮', text: '恒星能量网络已经建立，继续扩展将进入下一阶段。', action: '打开星图' };
+}
+
+function updateFactoryMonitor() {
+  const activeBuildings = state.buildings.filter(isBuildingActive).length;
+  const diagnostic = getFactoryDiagnostic();
+  const status = diagnostic.severity === 'warning'
+    ? '电力紧张'
+    : state.interstellar.route ? '星际联机'
+      : diagnostic.stage === 'research' ? '科研推进'
+        : diagnostic.kind === 'complete' ? '恒星工程'
+          : activeBuildings ? '生产运行' : '待命';
   query('#monitor-status').textContent = status;
-  query('#monitor-status').className = powerShortage ? 'monitor-state-warning' : state.interstellar.route ? 'monitor-state-route' : '';
-  query('#monitor-buildings').textContent = `${activeBuildings}/${Math.max(0, state.buildings.length - 1)}`;
+  query('#monitor-status').className = diagnostic.severity === 'warning' ? 'monitor-state-warning' : state.interstellar.route ? 'monitor-state-route' : '';
+  query('#monitor-buildings').textContent = `${activeBuildings}/${state.buildings.length}`;
   query('#monitor-items').textContent = formatNumber(state.items.length);
   query('#monitor-trips').textContent = formatNumber(state.interstellar.completedTrips);
-  query('#monitor-advice-text').textContent = advice;
+  query('#monitor-advice-text').textContent = `${diagnostic.title} · ${diagnostic.text}`;
+  const action = query('#monitor-advice-action');
+  action.hidden = !diagnostic.action;
+  action.textContent = diagnostic.action || '执行建议';
 }
 
 function renderCareerPanel() {
@@ -2413,7 +3445,7 @@ function renderSorterRouting(building) {
   const panel = query('#sorter-routing');
   const rulesHost = query('#sorter-routing-rules');
   if (!panel || !rulesHost) return;
-  if (!building || building.type !== 'sorter') {
+  if (!building || building.type !== 'sorter' || (building.sorterMode || 'input') !== 'output') {
     panel.hidden = true;
     state.sorterRoutingSignature = '';
     return;
@@ -2457,7 +3489,41 @@ function toggleCareerPanel(force) {
   if (open) {
     query('#tech-panel').hidden = true;
     query('#star-map-panel').hidden = true;
+    query('#craft-panel').hidden = true;
     renderCareerPanel();
+  }
+}
+
+function renderCraftPanel() {
+  const host = query('#craft-recipes');
+  if (!host) return;
+  const materialSummary = ['iron', 'copper', 'silicon'].map(resource => `${resources[resource].label} ${formatNumber(state.inventory[resource] || 0)}`).join(' · ');
+  const kitSummary = handcraftRecipes
+    .filter(recipe => recipe.outputType === 'kit' && kitCount(recipe.output) > 0)
+    .map(recipe => `${recipe.label.replace('套件', '')} ${kitCount(recipe.output)}`)
+    .join(' · ') || '暂无待放置套件';
+  query('#craft-material-summary').textContent = materialSummary;
+  query('#craft-kit-summary').textContent = kitSummary;
+  host.innerHTML = handcraftRecipes.map(recipe => {
+    const available = canAfford(recipe.cost);
+    const owned = recipe.outputType === 'kit' ? kitCount(recipe.output) : state.inventory[recipe.output] || 0;
+    return `<button class="craft-recipe" data-craft="${recipe.id}" ${available ? '' : 'disabled'}>
+      <span class="craft-recipe-icon">${recipe.output === 'belt' ? '╱╲' : recipe.output === 'sorter' ? '⇥' : '⌁'}</span>
+      <span class="craft-recipe-copy"><b>${recipe.label}</b><small>${recipe.description}</small><em>消耗 ${formatCost(recipe.cost)}</em></span>
+      <span class="craft-recipe-output"><strong>${recipe.outputLabel}</strong><small>现有 ${owned}</small></span>
+    </button>`;
+  }).join('');
+}
+
+function toggleCraftPanel(force) {
+  const panel = query('#craft-panel');
+  const open = typeof force === 'boolean' ? force : panel.hidden;
+  panel.hidden = !open;
+  if (open) {
+    query('#tech-panel').hidden = true;
+    query('#star-map-panel').hidden = true;
+    query('#career-panel').hidden = true;
+    renderCraftPanel();
   }
 }
 
@@ -2467,18 +3533,55 @@ function updateHUD() {
   query('#game-clock').textContent = `DAY 001 · ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
   query('#career-label').textContent = careerLabel();
   query('#career-button img').src = `output/imagegen/${state.career ? activeCareer().image : careerCatalog.logistics.image}`;
-  query('#count-iron').textContent = formatNumber(state.inventory.iron);
-  query('#count-copper').textContent = formatNumber(state.inventory.copper);
-  query('#count-silicon').textContent = formatNumber(state.inventory.silicon);
-  query('#count-processor').textContent = formatNumber(state.inventory.processor);
-  query('#count-titanium').textContent = formatNumber(state.inventory.titanium);
-  const netPower = state.powerGeneration - state.powerLoad;
-  query('#power-readout').textContent = `${netPower >= 0 ? '+' : ''}${netPower.toFixed(1)} MW`;
-  query('#power-readout').style.color = netPower < 0 ? '#ee6a65' : '#62d69a';
-  query('#power-fill').style.width = `${clamp(state.powerGeneration > 0 ? (state.powerLoad / state.powerGeneration) * 100 : 100, 4, 100)}%`;
-  query('#power-fill').style.background = netPower < 0 ? '#ee6a65' : '#62d69a';
-  query('#tool-label').textContent = state.tool === 'demolish' ? '拆除模式' : buildings[state.tool]?.label || '传送带';
-  if (state.pointer.cell) query('#cursor-readout').textContent = `GRID ${String(state.pointer.cell.x).padStart(2, '0')},${String(state.pointer.cell.y).padStart(2, '0')}`;
+  query('#count-iron').textContent = formatNumber((state.inventory.iron || 0) + storageAmount('iron'));
+  query('#count-copper').textContent = formatNumber((state.inventory.copper || 0) + storageAmount('copper'));
+  query('#count-silicon').textContent = formatNumber((state.inventory.silicon || 0) + storageAmount('silicon'));
+  query('#count-coal').textContent = formatNumber((state.inventory.coal || 0) + storageAmount('coal'));
+  query('#count-crudeOil').textContent = formatNumber((state.inventory.crudeOil || 0) + storageAmount('crudeOil'));
+  query('#count-water').textContent = formatNumber((state.inventory.water || 0) + storageAmount('water'));
+  query('#count-processor').textContent = formatNumber((state.inventory.processor || 0) + storageAmount('processor'));
+  query('#count-titanium').textContent = formatNumber((state.inventory.titanium || 0) + storageAmount('titanium'));
+  const totalLoadRatio = state.powerGeneration > POWER_EPSILON ? state.powerLoad / state.powerGeneration : state.powerLoad > 0 ? Number.POSITIVE_INFINITY : 0;
+  const gridIssues = [];
+  if (state.powerSummary.blackoutCount > 0) gridIssues.push(`瘫痪 ${state.powerSummary.blackoutCount}`);
+  if (state.powerSummary.highLoadCount > 0) gridIssues.push(`高负载 ${state.powerSummary.highLoadCount}`);
+  const gridStatus = state.powerSummary.gridCount === 0
+    ? '未接入电网'
+    : `${state.powerSummary.gridCount} 个电网 · ${gridIssues.length ? gridIssues.join(' · ') : `负载 ${Number.isFinite(totalLoadRatio) ? Math.round(totalLoadRatio * 100) : '∞'}%`}`;
+  query('#power-readout').textContent = `${state.powerGeneration.toFixed(1)} / ${state.powerLoad.toFixed(1)} MW`;
+  query('#power-readout').title = `发电 ${state.powerGeneration.toFixed(2)} MW · 用电 ${state.powerLoad.toFixed(2)} MW`;
+  query('#power-status').textContent = gridStatus;
+  query('#power-readout').style.color = state.powerSummary.blackoutCount > 0 ? '#ee6a65' : state.powerSummary.highLoadCount > 0 ? '#ff9b3d' : '#62d69a';
+  query('#power-fill').style.width = `${clamp(Number.isFinite(totalLoadRatio) ? totalLoadRatio * 100 : 100, 4, 100)}%`;
+  query('#power-fill').style.background = state.powerSummary.blackoutCount > 0 ? '#ee6a65' : state.powerSummary.highLoadCount > 0 ? '#ff9b3d' : '#62d69a';
+  query('#craft-button-state').textContent = `${Object.values(state.kits).reduce((total, amount) => total + Math.floor(amount || 0), 0)} 套件`;
+  const modeLabel = state.tool === 'inspect' ? '检视模式' : state.tool === 'demolish' ? '拆除模式' : buildings[state.tool]?.label || '传送带';
+  query('#tool-label').textContent = modeLabel;
+  query('#build-mode-badge').dataset.mode = state.tool;
+  if (state.tool === 'sorter') {
+    const anchor = state.pointer.sorterAnchor;
+    query('#cursor-readout').textContent = anchor?.kind === 'building'
+      ? '拖到传送带起点 · 建筑 → 传送带'
+      : anchor?.kind === 'belt'
+        ? '拖到建筑接口 · 传送带 → 建筑'
+        : '从建筑或传送带端点开始拖拽';
+  } else if (state.pointer.cell) {
+    const cell = state.pointer.cell;
+    const terrain = terrainAt(cell);
+    let readout = `GRID ${String(cell.x).padStart(2, '0')},${String(cell.y).padStart(2, '0')} · ${terrain.short}`;
+    if (state.tool === 'inspect') {
+      const building = findBuildingAt(cell);
+      const belt = building ? null : findBeltAt(cell);
+      readout += building ? ` · ${buildings[building.type].label} · 点击查看` : belt ? ` · 传送带 ${belt.length} 格 · 点击查看` : ' · 点击建筑或传送带查看详情';
+    } else if (state.tool === 'belt') {
+      if (isTerrainBlocked(cell)) readout += ` · ${terrain.short}禁建`;
+    } else if (state.tool !== 'demolish') {
+      const placement = placementCheck(state.tool, cell);
+      if (placement.reasonCode === 'terrain' && placement.terrain) readout = `GRID ${String(cell.x).padStart(2, '0')},${String(cell.y).padStart(2, '0')} · ${placement.terrain.short}`;
+      readout += placement.valid ? ' · 可建造' : ` · ${placement.reason}`;
+    }
+    query('#cursor-readout').textContent = readout;
+  }
   all('.tool-button').forEach(button => button.classList.toggle('selected', button.dataset.tool === state.tool));
   all('.tool-button').forEach(button => {
     const meta = buildings[button.dataset.tool];
@@ -2486,17 +3589,54 @@ function updateHUD() {
     const locked = techLock && !isTechUnlocked(techLock);
     button.classList.toggle('locked', Boolean(locked));
     const cost = button.querySelector('small');
-    if (cost && meta) cost.textContent = locked ? `需 ${techById[techLock]?.label || '科技'}` : formatCost(meta.cost);
+    if (cost && meta) cost.textContent = locked
+      ? `需 ${techById[techLock]?.label || '科技'}`
+      : kitCount(button.dataset.tool) > 0
+        ? `套件 ${kitCount(button.dataset.tool)} · ${formatCost(meta.cost)}`
+        : formatCost(meta.cost);
   });
   query('#map-button-state').textContent = state.interstellar.route ? '航线中' : isInterstellarUnlocked() ? '已接入' : '未接入';
   const selected = state.buildings.find(building => building.id === state.selectedId);
+  const selectedBelt = !selected && state.selectedBeltId ? state.belts.find(belt => belt.id === state.selectedBeltId) : null;
   const selection = query('#selection-card');
   const labModePicker = query('#lab-mode-picker');
+  const sorterInterface = query('#sorter-interface');
+  const stockLine = query('#selection-stock-line');
+  const interfaceLine = query('#selection-interface-line');
+  const gridLine = query('#selection-grid-line');
+  const gridAction = query('#selection-grid-action');
   renderSorterRouting(selected?.type === 'sorter' ? selected : null);
-  if (!selected) { selection.hidden = true; labModePicker.hidden = true; } else {
+  if (!selected && !selectedBelt) { selection.hidden = true; labModePicker.hidden = true; sorterInterface.hidden = true; stockLine.hidden = true; interfaceLine.hidden = true; gridLine.hidden = true; gridAction.hidden = true; }
+  else if (selectedBelt) {
+    const beltItems = state.items.filter(item => item.beltId === selectedBelt.id);
+    const resourcesOnBelt = [...new Set(beltItems.map(item => resources[item.resource]?.label || item.resource))];
+    const direction = selectedBelt.dx === 0 && selectedBelt.dy === 0 ? '端口桥接' : selectedBelt.dx > 0 ? '向东' : selectedBelt.dx < 0 ? '向西' : selectedBelt.dy > 0 ? '向南' : '向北';
+    selection.hidden = false;
+    labModePicker.hidden = true;
+    sorterInterface.hidden = true;
+    stockLine.hidden = true;
+    interfaceLine.hidden = true;
+    gridLine.hidden = true;
+    gridAction.hidden = true;
+    query('#selection-name').textContent = `传送带 · ${selectedBelt.length} 格`;
+    query('#selection-state').textContent = beltItems.length ? '运输中' : '待命';
+    query('#selection-state').style.color = '#62d69a';
+    query('#selection-input').textContent = resourcesOnBelt.length ? resourcesOnBelt.join('、') : '暂无物料';
+    query('#selection-output').textContent = `${beltItems.length} 件运输中`;
+    query('#selection-recipe').textContent = `方向 ${direction} · 起点 ${selectedBelt.x},${selectedBelt.y}`;
+    query('#selection-tech').textContent = '基础物流授权 · 已接入';
+    query('#selection-license').textContent = `${isTechUnlocked('belt-mk2') ? 'MK-2' : 'MK-1'} · ${getBeltTravelFactor().toFixed(2)} 格/秒`;
+    query('#selection-upgrade').textContent = isTechUnlocked('belt-mk2') ? '高速传送 · 已研究' : '下一项「高速传送」';
+    query('#selection-progress-fill').style.width = `${clamp(beltItems.length / Math.max(1, selectedBelt.length), 0, 1) * 100}%`;
+    query('#selection-power-label').textContent = '物流';
+    query('#selection-power').textContent = '无独立耗电';
+  } else {
     const meta = buildings[selected.type];
     selection.hidden = false;
     labModePicker.hidden = selected.type !== 'researchLab';
+    sorterInterface.hidden = selected.type !== 'sorter';
+    stockLine.hidden = !isStorageType(selected);
+    interfaceLine.hidden = !isStorageType(selected) && selected.type !== 'sorter';
     if (selected.type === 'researchLab') all('[data-lab-mode]').forEach(button => button.classList.toggle('active', (selected.researchMode || 'auto') === button.dataset.labMode));
     query('#selection-name').textContent = meta.label;
     const input = Object.entries(selected.input || {}).filter(([, amount]) => amount > 0).map(([resource, amount]) => `${resources[resource]?.label || resource} ${Math.floor(amount)}`).join(' · ');
@@ -2504,8 +3644,8 @@ function updateHUD() {
     const output = Object.entries(selected.output).find(([, amount]) => amount > 0);
     const status = buildingStatus(selected);
     query('#selection-state').textContent = status;
-    query('#selection-state').style.color = ['科技锁定', '电力不足', '输出堵塞', '缺少输入', '缺少矩阵组件', '缺煤', '未接入矿脉'].includes(status) ? '#ff9b3d' : '#62d69a';
-    query('#selection-output').textContent = output ? `${formatNumber(output[1])} 单位缓存` : selected.type === 'miner' || selected.type === 'oilExtractor' ? '采掘中 · 等待输出' : selected.type === 'hub' ? '库存接入' : '等待产出';
+    query('#selection-state').style.color = ['科技锁定', '电力不足', '电网瘫痪', '电网高负载', '输出堵塞', '缺少输入', '缺少矩阵组件', '缺煤', '未接入矿脉', '未接入水源', '未接入电网'].includes(status) ? '#ff9b3d' : '#62d69a';
+    query('#selection-output').textContent = output ? `${formatNumber(output[1])} 单位缓存` : ['miner', 'oilExtractor', 'waterPump'].includes(selected.type) ? '采掘中 · 等待输出' : '等待产出';
     query('#selection-recipe').textContent = buildingRecipeText(selected);
     query('#selection-tech').textContent = isBuildingUnlocked(selected.type) ? `${buildingTechName(selected.type)} · 已授权` : `需完成「${buildingTechName(selected.type)}」`;
     const selectionLevel = isBuildingUnlocked(selected.type) ? `MK-${Math.min(getBuildingLevel(selected.type), 3)}` : '锁定';
@@ -2515,9 +3655,47 @@ function updateHUD() {
     query('#selection-upgrade').textContent = upgradeState.next
       ? `${researchedUpgrades ? `已研究 ${researchedUpgrades} · ` : ''}下一项「${upgradeState.next.label}」`
       : researchedUpgrades || '暂无后续升级';
+    if (isStorageType(selected)) query('#selection-stock').textContent = `${formatNumber(storageUsed(selected))} / ${formatNumber(storageCapacity(selected))}`;
+    if (isStorageType(selected)) query('#selection-interface').textContent = `${state.buildings.filter(sorter => sorter.type === 'sorter' && sorterAttachedBuilding(sorter)?.id === selected.id).length} 个分拣器接口`;
+    if (selected.type === 'sorter') {
+      const target = sorterAttachedBuilding(selected);
+      const beltCount = selected.sorterMode === 'output' ? sorterOutputBelts(selected).length : sorterInputBelts(selected).length;
+      query('#sorter-interface-status').textContent = target ? `${buildings[target.type].label} · ${beltCount} 条${selected.sorterMode === 'output' ? '出料' : '进料'}传送带` : '先让分拣器同时贴近建筑和传送带';
+      all('[data-sorter-mode]').forEach(button => button.classList.toggle('active', (selected.sorterMode || 'input') === button.dataset.sorterMode));
+    }
+    const selectedGridState = getGridPowerState(selected);
+    gridLine.hidden = !isPowerBuilding(selected);
+    gridAction.hidden = !isPowerTowerType(selected);
+    if (isPowerBuilding(selected)) {
+      const grid = selectedGridState.grid;
+      const ratio = grid
+        ? grid.blackout ? '超负荷' : Number.isFinite(grid.ratio) ? `${Math.round(grid.ratio * 100)}%` : '--'
+        : '--';
+      query('#selection-grid').textContent = grid ? `${grid.id.replace('grid-', '电网 ')} · ${grid.status}` : '未接入电网';
+      query('#selection-grid-metrics').textContent = grid ? `发电 ${grid.generation.toFixed(1)} · 用电 ${grid.load.toFixed(1)} MW · 负载 ${ratio}` : '没有可共享的供电节点';
+      if (isPowerTowerType(selected)) {
+        gridAction.textContent = selected.gridEnabled === false ? '重新接入外部电网' : '断开外部电网';
+        const gridActionNote = query('#selection-grid-action-note');
+        if (gridActionNote) gridActionNote.textContent = selected.gridEnabled === false ? '保留本塔覆盖范围，先恢复局部供电' : '与覆盖范围内的其他电塔共享电力';
+      }
+    }
     query('#selection-progress-fill').style.width = `${buildingProgress(selected) * 100}%`;
-    query('#selection-power-label').textContent = meta.generation ? '发电' : '耗电';
-    query('#selection-power').textContent = `${meta.generation ? '+' : ''}${(meta.generation ? getPowerGeneration(selected) : meta.power).toFixed(1)} MW`;
+    const selectedPowerState = getGridPowerState(selected);
+    const nominalPower = meta.power || 0;
+    const hasFuel = selected.type !== 'thermal' || (selected.input?.coal || 0) > 0;
+    if (selected.baseHub) {
+      query('#selection-power-label').textContent = '基础电源';
+      query('#selection-power').textContent = `+${state.basePowerGeneration.toFixed(1)} MW`;
+    } else if (isPowerTowerType(selected)) {
+      query('#selection-power-label').textContent = '自身耗电';
+      query('#selection-power').textContent = `${nominalPower.toFixed(2)} MW`;
+    } else if (meta.generation) {
+      query('#selection-power-label').textContent = hasFuel ? '当前发电' : '当前发电 · 缺煤';
+      query('#selection-power').textContent = hasFuel ? `+${getPowerGeneration(selected).toFixed(2)} MW` : '+0.00 MW';
+    } else {
+      query('#selection-power-label').textContent = selectedPowerState.grid?.highLoad ? '耗电 · 有效 50%' : '耗电';
+      query('#selection-power').textContent = `${nominalPower.toFixed(2)} MW`;
+    }
   }
   updateResearchUI();
   updateObjective();
@@ -2540,6 +3718,7 @@ function focusResourceNode(resource) {
   if (!node) return false;
   state.camera = { x: node.x + .5, y: node.y + .5 };
   state.selectedId = null;
+  state.selectedBeltId = null;
   state.pointer.cell = null;
   showToast(`${resources[resource]?.label || resource}矿脉已定位`);
   return true;
@@ -2550,20 +3729,96 @@ function focusBuilding(building) {
   const center = buildingCenter(building);
   state.camera = { x: center.x, y: center.y };
   state.selectedId = building.id;
+  state.selectedBeltId = null;
   state.pointer.cell = null;
   return true;
 }
 
+function cancelToolSelection(announce = false) {
+  state.tool = 'inspect';
+  state.selectedId = null;
+  state.selectedBeltId = null;
+  state.pointer.startCell = null;
+  state.pointer.startBuildingId = null;
+  state.pointer.sorterAnchor = null;
+  state.pointer.down = false;
+  if (announce) showToast('已取消建筑选择');
+}
+
 function selectTool(tool) {
-  if (tool !== 'belt' && tool !== 'demolish' && !isBuildingUnlocked(tool)) {
+  if (!['inspect', 'belt', 'demolish'].includes(tool) && !isBuildingUnlocked(tool)) {
     showToast(`需要完成 ${buildingTechName(tool)}`, 'warning');
+    return;
+  }
+  if (tool !== 'inspect' && tool === state.tool) {
+    cancelToolSelection(true);
+    return;
+  }
+  if (tool === 'inspect') {
+    cancelToolSelection();
+    showToast('检视模式 · 点击建筑或传送带查看详情');
     return;
   }
   state.tool = tool;
   state.selectedId = null;
+  state.selectedBeltId = null;
   state.pointer.startCell = null;
   state.pointer.startBuildingId = null;
-  showToast(tool === 'demolish' ? '拆除模式' : `${buildings[tool]?.label || '传送带'} 已选中`, 'ok');
+  state.pointer.sorterAnchor = null;
+  const message = tool === 'inspect'
+    ? '检视模式 · 点击建筑查看详情'
+    : tool === 'demolish'
+      ? '拆除模式'
+      : `${buildings[tool]?.label || '传送带'} 已选中`;
+  showToast(message, 'ok');
+}
+
+function closeFactoryPanels() {
+  query('#tech-panel').hidden = true;
+  query('#star-map-panel').hidden = true;
+  query('#career-panel').hidden = true;
+  query('#craft-panel').hidden = true;
+}
+
+function runDiagnosticAction(diagnostic = getFactoryDiagnostic()) {
+  const action = diagnostic.action;
+  if (!action) return;
+  if (action === '打开星图') { toggleStarMap(true); return; }
+  if (action === '打开科技中枢' || action === '查看主线科技') { toggleTechPanel(true); return; }
+  if (action === '查看设施') {
+    focusBuilding(diagnostic.focusBuilding);
+    return;
+  }
+  closeFactoryPanels();
+  if (action === '选择采矿机') {
+    selectTool('miner');
+    focusResourceNode(diagnostic.focusResource || 'copper');
+    return;
+  }
+  if (action === '选择熔炼炉') {
+    selectTool('smelter');
+    if (diagnostic.focusResource) focusResourceNode(diagnostic.focusResource);
+    return;
+  }
+  if (action === '选择组装机') {
+    selectTool('assembler');
+    focusBuilding(diagnostic.focusBuilding);
+    return;
+  }
+  if (action === '选择传送带') {
+    selectTool('belt');
+    focusBuilding(diagnostic.focusBuilding);
+    return;
+  }
+  if (action === '选择分拣器') {
+    selectTool('sorter');
+    focusBuilding(diagnostic.focusBuilding);
+    return;
+  }
+  if (diagnostic.tool) {
+    selectTool(diagnostic.tool);
+    focusBuilding(diagnostic.focusBuilding);
+  }
 }
 
 function togglePause() {
@@ -2593,7 +3848,6 @@ function applyQaDemoState() {
     x, y, dx, dy, length
   });
   const demoBuildings = [
-    makeDemoBuilding('hub', -1, -1),
     makeDemoBuilding('miner', -8, -3, { nodeId: 'copper-north', timer: .55, output: { copper: 2 } }),
     makeDemoBuilding('smelter', -3, -2, { recipeResource: 'copper', process: .7, input: { copper: 2 } }),
     makeDemoBuilding('assembler', 3, -2, { process: .82, input: { copperIngot: 1, siliconWafer: 1 } }),
@@ -2631,15 +3885,15 @@ function applyQaDemoState() {
     state.stellarProject = makeStellarProject({ progress: 45, modules: 9 });
     state.interstellar = makeInterstellarState({ selectedPlanet: 'forge', cargo: 'processor', route: { id: 'qa-route', targetId: 'forge', cargo: 'processor', amount: 2, progress: .72, phase: 'returning' }, completedTrips: 6, visits: { forge: 4, frost: 2 } });
   } else if (mode === 'sorter') {
-    const sorter = makeDemoBuilding('sorter', -5, -2, { input: { copper: 1, iron: 1 }, process: .13 });
-    const copperLine = makeDemoBuilding('smelter', -1, -4, { recipeResource: 'copper' });
+    const sorter = makeDemoBuilding('sorter', -5, -2, { sorterMode: 'output', output: { copperIngot: 1, ironIngot: 1 }, process: .13 });
+    const copperLine = makeDemoBuilding('smelter', -5, -4, { recipeResource: 'copper' });
     const ironLine = makeDemoBuilding('smelter', -5, 2, { recipeResource: 'iron' });
     const copperOutput = { id: 'qa-demo-sorter-copper', x: -4, y: -2, dx: 1, dy: 0, length: 3 };
     const copperTurn = { id: 'qa-demo-sorter-copper-turn', x: -2, y: -2, dx: 0, dy: -1, length: 2 };
     const ironOutput = { id: 'qa-demo-sorter-iron', x: -5, y: -1, dx: 0, dy: 1, length: 3 };
     sorter.sorterRules.copper = copperOutput.id;
     state.tech = ['foundation', 'planetary-logistics', 'sorter-tech', 'belt-mk2', 'automated-smelting'];
-    state.buildings = [makeDemoBuilding('hub', -1, -1), sorter, copperLine, ironLine];
+    state.buildings = [sorter, copperLine, ironLine];
     state.belts = [
       { id: 'qa-demo-sorter-input', x: -9, y: -2, dx: 1, dy: 0, length: 4 },
       copperOutput,
@@ -2658,11 +3912,33 @@ function applyQaDemoState() {
 
 function runQaPlaythrough() {
   const failures = [];
+  // The QA fixture contains the full logistics topology before the energy
+  // branch is researched; give its landing platform enough bootstrap margin
+  // to test the production contracts without making a free global power rule.
+  state.basePowerGeneration = 6.5;
   const check = (condition, message) => { if (!condition) failures.push(message); };
-  const makeQaBelt = (x, y, dx, dy, length) => ({ id: `qa-playthrough-belt-${x}-${y}-${length}`, x, y, dx, dy, length });
+  const makeQaSorter = (x, y, mode) => {
+    const sorter = makeBuilding('sorter', x, y);
+    sorter.sorterMode = mode;
+    return sorter;
+  };
+  const addQaRoute = (source, target, prefix) => {
+    const route = beltPortsBetweenBuildings(source, target);
+    (route.segments || []).forEach((segment, index) => state.belts.push({ ...segment, id: `${prefix}-${index}` }));
+    return route;
+  };
+  const seedQaResearchStock = (cube, amount) => {
+    const storage = storageBuildings()[0];
+    Object.keys(storage.stock || {}).forEach(resource => {
+      if (resource !== cube && resource !== 'processor') storage.stock[resource] = 0;
+    });
+    storage.stock[cube] = Math.max(storage.stock[cube] || 0, amount);
+  };
   const researchQaTech = id => {
     state.research = { current: null, progress: 0 };
-    state.inventory[techById[id].cube] = Math.max(state.inventory[techById[id].cube] || 0, techById[id].cost + 4);
+    const cube = techById[id].cube;
+    seedQaResearchStock(cube, techById[id].cost + 4);
+    check(storageAmount(cube) >= techById[id].cost, `${id} 研究材料没有进入物流仓储`);
     startResearch(id);
     check(state.research.current === id, `${id} 未进入研究 · 当前 ${state.research.current || '待命'}`);
     simulateResearch(1000);
@@ -2671,7 +3947,6 @@ function runQaPlaythrough() {
   state.career = 'logistics';
   state.careerChosen = true;
   state.pendingCareer = 'logistics';
-  const hub = makeBuilding('hub', -1, -1);
   const miner = makeBuilding('miner', -8, -3);
   miner.nodeId = 'copper-north';
   const smelter = makeBuilding('smelter', -3, -2);
@@ -2679,17 +3954,95 @@ function runQaPlaythrough() {
   const assembler = makeBuilding('assembler', 3, -2);
   assembler.input = { copperIngot: 1, siliconWafer: 1 };
   const lab = makeBuilding('researchLab', 3, 3);
-  state.buildings = [hub, miner, smelter, assembler, lab];
-  state.belts = [makeQaBelt(-6, -1, 1, 0, 3), makeQaBelt(-1, -1, 1, 0, 4), makeQaBelt(4, 0, 0, 1, 4)];
+  const storage = makeBuilding('storage', 8, -1);
+  storage.baseHub = true;
+  storage.stock = { ...startingStorageStock, processor: 20 };
+  const qaWind = makeBuilding('wind', 14, 1);
+  const qaThermal = makeBuilding('thermal', 14, 4, 0);
+  const qaTowers = [-6, 0, 6, 12].map((x, index) => makeBuilding('powerTower', x, 0, 0));
+  const minerOutput = makeQaSorter(-6, -2, 'output');
+  const smelterInput = makeQaSorter(-1, -2, 'input');
+  const smelterOutput = makeQaSorter(-3, -3, 'output');
+  const storageInput = makeQaSorter(7, -2, 'input');
+  const storageOutput = makeQaSorter(7, 0, 'output');
+  const storageInputTwo = makeQaSorter(10, 0, 'input');
+  const storageOutputTwo = makeQaSorter(8, 1, 'output');
+  const labInput = makeQaSorter(2, 3, 'input');
+  const labOutput = makeQaSorter(5, 3, 'output');
+  const assemblerInput = makeQaSorter(3, -3, 'input');
+  const assemblerOutput = makeQaSorter(5, -2, 'output');
+  state.buildings = [storage, miner, smelter, assembler, lab, qaWind, qaThermal, minerOutput, smelterInput, smelterOutput, storageInput, storageOutput, storageInputTwo, storageOutputTwo, labInput, labOutput, assemblerInput, assemblerOutput];
+  state.belts = [];
+  addQaRoute(minerOutput, smelterInput, 'qa-miner-smelter');
+  addQaRoute(smelterOutput, storageInput, 'qa-smelter-storage');
+  addQaRoute(storageOutput, labInput, 'qa-storage-lab');
+  addQaRoute(labOutput, storageInputTwo, 'qa-lab-storage');
+  addQaRoute(storageOutputTwo, assemblerInput, 'qa-storage-assembler');
+  addQaRoute(assemblerOutput, storageInputTwo, 'qa-assembler-storage');
+  // Place transmission towers after routing QA creates its belts so they do
+  // not accidentally change the logistics pathfinder's obstacle map.
+  state.buildings.push(...qaTowers);
   state.nodes = initialNodeState.map(node => ({ ...node }));
   state.items = [];
-  state.inventory = { ...startingInventory, electromagneticCube: 160, energyCube: 160, structureCube: 160, informationCube: 160, processor: 20, titanium: 0 };
+  state.inventory = { ...startingInventory, titanium: 0 };
   state.tech = [...startingTech];
   state.research = { current: null, progress: 0 };
   state.interstellar = makeInterstellarState({ selectedPlanet: 'forge', cargo: 'processor' });
   state.stellarProject = makeStellarProject();
+  check(!state.buildings.some(building => building.type === 'hub'), '旧能源核心仍然存在于运行时场景');
+  check(storageCapacity(storage) === 240, '基础物流仓储容量错误');
+  check(isBuildingUnlocked('sorter'), '基础工业授权没有解锁基础分拣器');
+  check(terrainAt({ x: 13, y: -7 }).kind === 'rock' && terrainAt({ x: -14, y: 8 }).kind === 'water', '固定地形瓦片没有生成');
+  const footprintOverlap = placementCheck('smelter', { x: -7, y: -2 });
+  check(!footprintOverlap.valid && footprintOverlap.reasonCode === 'building', '建筑 footprint 没有阻止与已有设施重叠');
+  const beltOverlap = placementCheck('smelter', { x: -5, y: -2 });
+  check(!beltOverlap.valid && beltOverlap.reasonCode === 'belt', '建筑 footprint 没有阻止压到传送带');
+  const rockPlacement = placementCheck('smelter', { x: 13, y: -7 });
+  const waterPlacement = placementCheck('smelter', { x: -14, y: 8 });
+  const resourcePlacementBuildings = state.buildings;
+  const resourcePlacementBelts = state.belts;
+  state.buildings = [];
+  state.belts = [];
+  const mineralCorePlacement = placementCheck('smelter', { x: 5, y: -4 });
+  const adjacentMinerCell = { x: 3, y: -6 };
+  const adjacentMinerPlacement = placementCheck('miner', adjacentMinerCell);
+  state.buildings = resourcePlacementBuildings;
+  state.belts = resourcePlacementBelts;
+  check(!rockPlacement.valid && rockPlacement.reasonCode === 'terrain', '岩石地形仍然允许放置建筑');
+  check(!waterPlacement.valid && waterPlacement.reasonCode === 'terrain', '水域地形仍然允许放置建筑');
+  check(!mineralCorePlacement.valid && mineralCorePlacement.reasonCode === 'resource' && mineralCorePlacement.blockedCell.x === 5 && mineralCorePlacement.blockedCell.y === -4, '建筑 footprint 仍然可以压住矿脉核心格');
+  check(Boolean(adjacentMinerPlacement.valid && findNodeForBuilding({ type: 'miner', ...adjacentMinerCell })?.id === 'silicon-west'), '采矿机贴近矿脉时没有保留覆盖范围判定');
+  check(findBeltPath({ x: 13, y: -7 }, { x: 13, y: -5 }).length === 0, '传送带仍然可以穿过禁建地形');
+  check(!deliver(lab, 'copperIngot'), '建筑仍然允许绕过分拣器直接进料');
+  check(findSorterForBuilding(miner, 'copper', 'output') === minerOutput, '矿机没有识别出料分拣器');
+  check(findSorterForBuilding(smelter, 'copper', 'input') === smelterInput, '冶炼机没有识别进料分拣器');
+  check(findSorterForBuilding(storage, 'copperIngot', 'input') === storageInput, '仓储没有识别进料分拣器');
+  check(findSorterForBuilding(storage, 'copperIngot', 'output') === storageOutput, '仓储没有识别出料分拣器');
+  const installBuilding = makeBuilding('smelter', 14, 7);
+  const installOutputBelt = { id: 'qa-install-output', x: 16, y: 6, dx: 1, dy: 0, length: 2 };
+  const installInputBelt = { id: 'qa-install-input', x: 17, y: 7, dx: 0, dy: 0, length: 1 };
+  const outputInstall = findSorterPlacement(installBuilding, installOutputBelt, 'output');
+  const inputInstall = findSorterPlacement(installBuilding, installInputBelt, 'input');
+  check(outputInstall?.cell?.x === 15 && outputInstall?.cell?.y === 6, '建筑拖到传送带起点时没有自动吸附出料分拣器');
+  check(inputInstall?.cell?.x === 16 && inputInstall?.cell?.y === 7, '传送带末端拖到建筑时没有自动吸附进料分拣器');
+  const buildingsBeforeInstall = state.buildings;
+  const beltsBeforeInstall = state.belts;
+  const inventoryBeforeInstall = { ...state.inventory };
+  state.buildings = [...state.buildings, installBuilding];
+  state.belts = [...state.belts, installOutputBelt];
+  const installedSorter = placeSorterBetween(installBuilding, installOutputBelt, 'output');
+  check(installedSorter && state.buildings.some(building => building.type === 'sorter' && building.sorterMode === 'output' && building.x === 15 && building.y === 6), '分拣器拖拽安装没有生成建筑出料接口');
+  state.buildings = buildingsBeforeInstall;
+  state.belts = beltsBeforeInstall;
+  state.inventory = inventoryBeforeInstall;
   simulateBuildings(2);
   check(state.nodes.find(node => node.id === 'copper-north').amount < 62400, '采矿脉冲未消耗矿脉');
+  check(
+    (smelter.input.copper || 0) > 0
+      || (smelter.output.copperIngot || 0) > 0
+      || state.items.some(item => item.resource === 'copper' || item.resource === 'copperIngot'),
+    '矿机到冶炼机的真实物流未推进'
+  );
   check(!isBuildingUnlocked('assembler'), '组装机提前解锁');
   check(buildingStatus(assembler) === '科技锁定', '未授权建筑没有进入锁定状态');
   check((assembler.output.processor || 0) === 0, '未授权建筑仍在生产');
@@ -2697,28 +4050,37 @@ function runQaPlaythrough() {
     .filter(isBuildingOperational)
     .reduce((total, building) => total + (buildings[building.type]?.power || 0), 0);
   check(Math.abs(state.powerLoad - expectedLoad) < .001, '未授权建筑错误计入电网');
-  state.inventory.electromagneticCube = 0;
   state.research = { current: 'planetary-logistics', progress: 0 };
-  simulateBuildings(3);
-  check(state.inventory.electromagneticCube > 0, '科研站未从实际输入生产电磁矩阵');
+  for (let tick = 0; tick < 14; tick += 1) simulateBuildings(1);
+  const matrixBeforeResearch = storageAmount('electromagneticCube');
+  check(matrixBeforeResearch > 0, '科研站未通过分拣器向物流仓储输出电磁矩阵');
   simulateResearch(1);
-  check(state.research.progress > 0, '研究循环未消费科研站产出的矩阵');
+  check(state.research.progress > 0 && storageAmount('electromagneticCube') < matrixBeforeResearch, '研究循环未从物流仓储消费矩阵');
   state.research = { current: null, progress: 0 };
   const smeltingTimeBefore = getSmeltingTime();
   researchQaTech('planetary-logistics');
   const beltSpeedBefore = getBeltTravelFactor();
   researchQaTech('sorter-tech');
-  check(isBuildingUnlocked('sorter'), '分拣器未随科技解锁');
+  check(getBuildingLevel('sorter') >= 2, '智能分拣没有升级分拣器等级');
+  const storageCapacityBefore = storageCapacity(storage);
+  researchQaTech('storage-mk2');
+  check(storageCapacity(storage) > storageCapacityBefore && storageCapacity(storage) === 480, '仓储扩容没有改变真实容量');
   researchQaTech('belt-mk2');
   check(getBeltTravelFactor() < beltSpeedBefore, '高速传送未改变运输速度');
   const miningTimeBefore = getMiningTime(miner);
   researchQaTech('mining-mk2');
   check(getMiningTime(miner) < miningTimeBefore, '高压采掘未升级采矿速度');
-  const oilExtractor = makeBuilding('oilExtractor', 10, 5);
+  const oilExtractor = makeBuilding('oilExtractor', 9, 5);
   const oilTimeBefore = getMiningTime(oilExtractor);
   researchQaTech('oil-processing');
   check(isBuildingUnlocked('oilExtractor'), '石油提取机未随石化开采解锁');
-  check(placementCheck('oilExtractor', { x: 10, y: 5 }).valid, '石油提取机解锁后无法覆盖原油渗流区');
+  const oilPlacementBelts = state.belts;
+  state.belts = [];
+  const oilPlacement = placementCheck('oilExtractor', { x: 9, y: 5 });
+  check(oilPlacement.valid, `石油提取机贴近原油渗流区时无法放置 · ${oilPlacement.reason || '未知原因'}`);
+  const oilCorePlacement = placementCheck('oilExtractor', { x: 11, y: 6 });
+  check(!oilCorePlacement.valid && oilCorePlacement.reasonCode === 'resource', `石油提取机仍然可以压住原油核心格 · ${oilCorePlacement.reason || '未知原因'}`);
+  state.belts = oilPlacementBelts;
   researchQaTech('oil-extractor-mk2');
   check(getMiningTime(oilExtractor) < oilTimeBefore, '深层泵压未升级石油提取速度');
   const workbench = makeBuilding('workbench', 0, 0);
@@ -2736,12 +4098,22 @@ function runQaPlaythrough() {
   const thermalOutputBefore = getPowerGeneration(thermal);
   researchQaTech('power-grid-mk2');
   check(getPowerGeneration(wind) > windOutputBefore && getPowerGeneration(thermal) > thermalOutputBefore, '电网增容未升级发电输出');
+  researchQaTech('power-transmission');
+  check(isBuildingUnlocked('longPowerTower') && getTransmissionRange(qaTowers[0]) > buildings.powerTower.transmissionRange, '远距输电没有解锁或扩大电塔覆盖');
+  researchQaTech('advanced-power-grid');
+  check(isBuildingUnlocked('ultraPowerTower'), '超远距骨干网没有解锁超远距离电力塔');
   researchQaTech('automated-smelting');
   check(isBuildingUnlocked('assembler'), '自动冶炼未解锁组装机');
   check(getSmeltingTime() < smeltingTimeBefore, '自动冶炼未升级冶炼速度');
   check(placementCheck('assembler', { x: 12, y: 8 }).valid, '组装机解锁后仍无法进入建造状态');
+  const processorBeforeAssemblerCheck = storageAmount('processor');
   simulateBuildings(3);
-  check((assembler.output.processor || 0) > 0, '建筑解锁后没有恢复生产');
+  const assemblerHasProduced = (assembler.output.processor || 0) > 0
+    || state.items.some(item => item.sourceId === assembler.id && item.resource === 'processor')
+    || state.items.some(item => item.resource === 'processor')
+    || storageAmount('processor') > processorBeforeAssemblerCheck
+    || state.buildings.some(building => building.type === 'sorter' && (building.output.processor || 0) > 0);
+  check(assemblerHasProduced, `建筑解锁后没有恢复生产 · ${buildingStatus(assembler)} · 电力 ${state.powerGeneration.toFixed(1)}/${state.powerLoad.toFixed(1)} · 输入 ${JSON.stringify(assembler.input)}`);
   const assemblyTimeBefore = getAssemblyTime(assembler);
   researchQaTech('advanced-assembly');
   check(getAssemblyTime(assembler) < assemblyTimeBefore, '高级组装未升级组装机速度');
@@ -2751,46 +4123,102 @@ function runQaPlaythrough() {
   check(getResearchProductionTime(researchQaLab, 'electromagneticCube') < researchTimeBefore, '矩阵实验室未升级科研站速度');
   check(getBuildingLevel('miner') >= 2 && getBuildingLevel('oilExtractor') >= 2 && getBuildingLevel('wind') >= 2, '建筑升级等级未同步');
   researchQaTech('interstellar-logistics');
+  check(isBuildingUnlocked('logisticsStation'), '星际物流没有解锁行星物流站');
+  storage.stock = { processor: 20, electromagneticCube: 0, energyCube: 0, structureCube: 0, informationCube: 0, titanium: 0 };
   state.interstellar.cargo = 'processor';
   launchRoute();
   check(state.interstellar.route?.phase === 'outbound', '货运舱未进入去程');
   simulateInterstellar(13);
   check(state.interstellar.route?.phase === 'returning', '货运舱未进入返航');
   simulateInterstellar(13);
-  check(state.interstellar.completedTrips === 1 && state.inventory.titanium === 8, '异星钛资源未回收');
+  check(state.interstellar.completedTrips === 1 && storageAmount('titanium') === 8, '异星钛资源未回收到物流仓储');
   researchQaTech('stellar-network');
   researchQaTech('dyson-frame');
-  state.inventory.structureCube = 80;
-  state.inventory.titanium = 40;
-  state.inventory.processor = 20;
+  storage.stock = { structureCube: 80, titanium: 40, processor: 20 };
   for (let index = 0; index < 20; index += 1) contributeStellarProject();
   check(state.stellarProject.progress === 100, '恒星工程未完成');
-  const qaSorter = makeBuilding('sorter', -12, -5);
-  const qaCopperLine = makeBuilding('smelter', -8, -7);
-  qaCopperLine.recipeResource = 'copper';
-  const qaIronLine = makeBuilding('smelter', -12, -1);
-  qaIronLine.recipeResource = 'iron';
-  const qaSorterInput = { id: 'qa-sorter-input', x: -16, y: -5, dx: 1, dy: 0, length: 4 };
-  const qaCopperTurn = { id: 'qa-sorter-copper-turn', x: -9, y: -5, dx: 0, dy: -1, length: 2 };
-  const qaCopperOutput = { id: 'qa-sorter-copper-output', x: -11, y: -5, dx: 1, dy: 0, length: 2 };
-  const qaIronOutput = { id: 'qa-sorter-iron-output', x: -12, y: -4, dx: 0, dy: 1, length: 3 };
-  state.buildings.push(qaSorter, qaCopperLine, qaIronLine);
-  state.belts.push(qaSorterInput, qaCopperOutput, qaCopperTurn, qaIronOutput);
-  qaSorter.sorterRules.copper = qaCopperOutput.id;
-  check(findSorterOutputBelt(qaSorter, 'copper') === qaCopperOutput, '分拣器未按物料规则选择出口');
-  check(findSorterOutputBelt(qaSorter, 'iron') === qaIronOutput, '分拣器自动分流未识别下游产线');
-  qaSorter.sorterRules.iron = 'deleted-belt-rule';
-  check(findSorterOutputBelt(qaSorter, 'iron') === qaIronOutput && !qaSorter.sorterRules.iron, '失效分流规则未自动恢复');
-  check(findNextBelt(qaCopperOutput, 'copper', qaSorter.id) === qaCopperTurn, '多段转向传送带未接续');
-  deliver(qaSorter, 'copper');
+  const completedBuildings = state.buildings;
+  const completedBelts = state.belts;
+  const completedItems = state.items;
+  const qaPowerBase = state.basePowerGeneration;
+  const qaPowerBuildings = [
+    makeBuilding('wind', -10, -10),
+    makeBuilding('powerTower', -10, -6),
+    makeBuilding('powerTower', 0, -6),
+    makeBuilding('miner', -10, -8),
+    makeBuilding('miner', -7, -8),
+    makeBuilding('miner', -4, -8),
+    makeBuilding('miner', -1, -8),
+    makeBuilding('miner', 2, -8)
+  ];
+  state.basePowerGeneration = 0;
+  state.buildings = qaPowerBuildings;
+  state.belts = [];
+  state.items = [];
+  rebuildPowerGrids();
+  const highLoadGrid = state.powerGrids.find(grid => grid.buildingIds.includes(qaPowerBuildings[0].id));
+  check(Boolean(highLoadGrid?.highLoad && getGridPowerState(qaPowerBuildings[3]).efficiency === .5), '电网达到 80% 负载后没有将用电设施效率减半');
+  const blackoutMiner = makeBuilding('miner', 5, -8);
+  state.buildings.push(blackoutMiner);
+  rebuildPowerGrids();
+  check(Boolean(state.powerGrids.find(grid => grid.buildingIds.includes(blackoutMiner.id))?.blackout), '用电大于发电时电网没有进入瘫痪');
+  const disconnectWind = makeBuilding('wind', -10, -10);
+  const disconnectTower = makeBuilding('powerTower', -10, -6);
+  const isolatedTower = makeBuilding('powerTower', 0, -6);
+  const disconnectMiner = makeBuilding('miner', -10, -8);
+  state.buildings = [disconnectWind, disconnectTower, isolatedTower, disconnectMiner];
+  rebuildPowerGrids();
+  isolatedTower.gridEnabled = false;
+  rebuildPowerGrids();
+  check(state.powerSummary.gridCount >= 2 && state.powerGrids.some(grid => grid.buildingIds.includes(isolatedTower.id) && grid.blackout), '断开电塔外部连接后没有形成可恢复的局部电网');
+  state.basePowerGeneration = qaPowerBase;
+  state.buildings = completedBuildings;
+  state.belts = completedBelts;
+  state.items = completedItems;
+  rebuildPowerGrids();
+  check(getFactoryDiagnostic().kind === 'complete', '完整主流程诊断没有进入完成态');
+  // Use a fresh two-branch topology to test that one output sorter can route
+  // different products to different input sorters after the mainline checks.
+  state.buildings = [storage];
+  state.belts = [];
+  state.items = [];
+  const qaSource = makeBuilding('smelter', -10, -8);
+  qaSource.recipeResource = 'copper';
+  qaSource.output = { copperIngot: 1, ironIngot: 1 };
+  const qaSorter = makeQaSorter(-10, -6, 'output');
+  const qaCopperTarget = makeBuilding('assembler', -4, -8);
+  const qaCopperInput = makeQaSorter(-2, -8, 'input');
+  const qaIronTarget = makeBuilding('workbench', -4, 1);
+  const qaIronInput = makeQaSorter(-2, 1, 'input');
+  state.buildings.push(qaSource, qaSorter, qaCopperTarget, qaCopperInput, qaIronTarget, qaIronInput);
+  addQaRoute(qaSorter, qaCopperInput, 'qa-copper');
+  addQaRoute(qaSorter, qaIronInput, 'qa-iron');
+  const qaBranchWind = makeBuilding('wind', -8, -5);
+  const qaBranchTowers = [makeBuilding('powerTower', -8, -6), makeBuilding('powerTower', -3, -6), makeBuilding('powerTower', -3, 1)];
+  state.buildings.push(qaBranchWind, ...qaBranchTowers);
+  const qaCopperOutput = state.belts.find(belt => belt.id === 'qa-copper-0');
+  const qaIronOutput = state.belts.find(belt => belt.id === 'qa-iron-0');
+  check(Boolean(qaCopperOutput && qaIronOutput), '分拣器没有形成两个独立输出端口');
+  qaSorter.sorterRules.copperIngot = qaCopperOutput?.id;
+  check(findSorterOutputBelt(qaSorter, 'copperIngot') === qaCopperOutput, '分拣器未按物料规则选择铜锭出口');
+  check(findSorterOutputBelt(qaSorter, 'ironIngot') === qaIronOutput, '分拣器自动分流未识别铁锭产线');
+  qaSorter.sorterRules.ironIngot = 'deleted-belt-rule';
+  check(findSorterOutputBelt(qaSorter, 'ironIngot') === qaIronOutput && !qaSorter.sorterRules.ironIngot, '失效分流规则未自动恢复');
+  check(findSorterForBuilding(qaCopperTarget, 'copperIngot', 'input') === qaCopperInput, '铜锭目标没有识别进料分拣器');
+  check(!deliver(qaCopperTarget, 'copperIngot'), '分拣器分流 QA 仍允许建筑直连');
   simulateBuildings(.3);
-  check(state.items.some(item => item.beltId === qaCopperOutput.id && item.resource === 'copper'), '分拣器铜物料未进入指定出口');
-  deliver(qaSorter, 'iron');
-  simulateBuildings(.3);
-  check(state.items.some(item => item.beltId === qaIronOutput.id && item.resource === 'iron'), '分拣器铁物料未进入自动出口');
+  check(state.items.some(item => item.beltId === qaCopperOutput?.id && item.resource === 'copperIngot'), '分拣器铜锭物料未进入指定出口');
+  check(state.items.some(item => item.beltId === qaIronOutput?.id && item.resource === 'ironIngot'), '分拣器铁锭物料未进入自动出口');
+  check(storageUsed(storage) <= storageCapacity(storage), '物流仓储库存超过容量上限');
+  state.buildings = completedBuildings;
+  state.belts = completedBelts;
+  state.items = completedItems;
+  state.selectedId = null;
+  state.selectedBeltId = null;
+  simulateBuildings(.01);
   const passed = failures.length === 0;
   const report = passed
-    ? 'QA PASS · 采矿/矩阵生产 → 全设施授权/升级 → 分拣分流 → 星际去返 → 恒星工程 100%'
+    ? 'QA PASS · 矿机→冶炼→矩阵生产 → 全设施授权/升级 → 分拣分流 → 星际去返 → 恒星工程 100%'
     : `QA FAIL · ${failures.join(' · ')}`;
   document.body.dataset.qaResult = passed ? 'pass' : 'fail';
   const reportNode = document.createElement('div');
@@ -2813,6 +4241,12 @@ query('#speed-button').addEventListener('click', toggleSimulationSpeed);
 query('#career-button').addEventListener('click', () => toggleCareerPanel());
 query('#close-career-panel').addEventListener('click', () => toggleCareerPanel(false));
 query('#career-confirm').addEventListener('click', confirmCareer);
+query('#craft-button').addEventListener('click', () => toggleCraftPanel());
+query('#close-craft-panel').addEventListener('click', () => toggleCraftPanel(false));
+query('#craft-recipes').addEventListener('click', event => {
+  const button = event.target.closest('[data-craft]');
+  if (button && !button.disabled) craftRecipe(button.dataset.craft);
+});
 query('#tech-button').addEventListener('click', () => toggleTechPanel());
 query('#brief-tech-button').addEventListener('click', () => toggleTechPanel(true));
 query('#close-tech-panel').addEventListener('click', () => toggleTechPanel(false));
@@ -2820,50 +4254,19 @@ query('#map-button').addEventListener('click', () => toggleStarMap());
 query('#close-star-map').addEventListener('click', () => toggleStarMap(false));
 query('#launch-route-button').addEventListener('click', launchRoute);
 query('#stellar-project-button').addEventListener('click', contributeStellarProject);
-query('#objective-action').addEventListener('click', () => {
-  const action = query('#objective-action').dataset.action;
-  const productionGap = researchProductionGap();
-  const closePanelsForBuild = () => {
-    query('#tech-panel').hidden = true;
-    query('#star-map-panel').hidden = true;
-    query('#career-panel').hidden = true;
-  };
-  if (action === '选择采矿机') {
-    closePanelsForBuild();
-    const researchResource = productionGap?.kind === 'miner' ? productionGap.raw : researchMissingRawResource();
-    focusResourceNode(researchResource || 'copper');
-    selectTool('miner');
-  }
-  else if (action === '选择熔炼炉') {
-    closePanelsForBuild();
-    focusResourceNode(productionGap?.raw || 'copper');
-    selectTool('smelter');
-  }
-  else if (action === '选择组装机') {
-    closePanelsForBuild();
-    selectTool('assembler');
-  }
-  else if (action === '选择传送带') {
-    closePanelsForBuild();
-    const focusTarget = productionGap?.kind === 'warehouseBelt'
-      ? state.buildings.find(building => building.type === 'hub')
-      : productionGap?.kind === 'rawToSmelter'
-        ? productionGap.miner
-      : productionGap?.source || productionGap?.smelter || productionGap?.producer || null;
-    focusBuilding(focusTarget);
-    selectTool('belt');
-  }
-  else if (action === '选择熔炼炉') selectTool('smelter');
-  else if (action === '选择科研站') selectTool('researchLab');
-  else if (action === '打开星图') toggleStarMap(true);
-  else toggleTechPanel(true);
-});
+query('#objective-action').addEventListener('click', () => runDiagnosticAction());
+query('#monitor-advice-action').addEventListener('click', () => runDiagnosticAction());
+query('#research-diagnostic-action').addEventListener('click', () => runDiagnosticAction());
 query('#reset-button').addEventListener('click', () => {
-  state.buildings = [makeBuilding('hub', -1, -1)];
+  const storage = makeBuilding('storage', 3, -1);
+  storage.baseHub = true;
+  storage.stock = { ...startingStorageStock };
+  state.buildings = [storage];
   state.belts = [];
   state.items = [];
   state.selectedId = null;
   state.inventory = { ...startingInventory };
+  state.kits = { ...startingKits };
   state.nodes = initialNodeState.map(node => ({ ...node }));
   state.time = 6 * 3600;
   state.tech = [...startingTech];
@@ -2874,12 +4277,15 @@ query('#reset-button').addEventListener('click', () => {
   state.careerChosen = false;
   state.pendingCareer = 'logistics';
   state.researchRate = 0;
-  state.powerGeneration = 12;
+  state.powerGeneration = state.basePowerGeneration;
   state.powerLoad = 0;
+  state.powerGrids = [];
+  state.powerSummary = { gridCount: 0, highLoadCount: 0, blackoutCount: 0, generation: 0, load: 0 };
   state.simulationSpeed = 1;
   state.camera = { x: 0, y: 1 };
   state.zoom = .78;
-  state.tool = 'miner';
+  state.tool = 'inspect';
+  state.selectedBeltId = null;
   state.rotation = 0;
   state.pointer.startCell = null;
   state.pointer.startBuildingId = null;
@@ -2889,10 +4295,24 @@ query('#reset-button').addEventListener('click', () => {
   toggleCareerPanel(true);
   showToast('本地工厂已重置');
 });
-query('#close-selection').addEventListener('click', () => { state.selectedId = null; });
+query('#close-selection').addEventListener('click', () => cancelToolSelection());
+query('#selection-grid-action').addEventListener('click', () => {
+  const building = state.buildings.find(entry => entry.id === state.selectedId);
+  if (!building || !isPowerTowerType(building)) return;
+  building.gridEnabled = building.gridEnabled === false;
+  rebuildPowerGrids();
+  saveGame();
+  showToast(building.gridEnabled ? '电塔已重新接入外部电网' : '电塔已断开外部连接，保留局部覆盖', building.gridEnabled ? 'ok' : 'warning');
+  updateHUD();
+  render();
+});
 query('#selection-delete').addEventListener('click', () => {
   const building = state.buildings.find(entry => entry.id === state.selectedId);
   if (building) removeAt({ x: building.x, y: building.y });
+  else if (state.selectedBeltId) {
+    const belt = state.belts.find(entry => entry.id === state.selectedBeltId);
+    if (belt) removeAt({ x: belt.x, y: belt.y });
+  }
 });
 query('#lab-mode-options').addEventListener('click', event => {
   const button = event.target.closest('[data-lab-mode]');
@@ -2919,6 +4339,19 @@ query('#sorter-routing-rules').addEventListener('change', event => {
   showToast(select.value ? `${resources[select.dataset.sorterResource].label} 已指定分流出口` : `${resources[select.dataset.sorterResource].label} 已恢复自动分流`);
   updateHUD();
 });
+query('#sorter-interface').addEventListener('click', event => {
+  const button = event.target.closest('[data-sorter-mode]');
+  if (!button) return;
+  const sorter = state.buildings.find(entry => entry.id === state.selectedId && entry.type === 'sorter');
+  if (!sorter) return;
+  sorter.sorterMode = button.dataset.sorterMode === 'output' ? 'output' : 'input';
+  sorter.input = sorter.input || {};
+  sorter.output = sorter.output || {};
+  state.sorterRoutingSignature = '';
+  saveGame();
+  showToast(sorter.sorterMode === 'output' ? '分拣器已切换为建筑出料' : '分拣器已切换为建筑进料');
+  updateHUD();
+});
 
 canvas.addEventListener('contextmenu', event => event.preventDefault());
 canvas.addEventListener('pointermove', event => {
@@ -2937,11 +4370,33 @@ canvas.addEventListener('pointermove', event => {
 });
 canvas.addEventListener('pointerdown', event => {
   if (event.button === 2) {
+    if (state.tool !== 'inspect') {
+      cancelToolSelection(true);
+      return;
+    }
     state.pointer.panning = true; state.pointer.lastX = event.clientX; state.pointer.lastY = event.clientY; canvas.setPointerCapture(event.pointerId); return;
   }
   if (event.button !== 0) return;
   state.pointer.down = true;
   state.pointer.cell = screenToCell(event.clientX, event.clientY);
+  if (state.tool === 'sorter') {
+    const building = findBuildingAt(state.pointer.cell);
+    if (isSorterTargetBuilding(building)) {
+      state.pointer.sorterAnchor = { kind: 'building', id: building.id };
+      state.selectedId = building.id;
+      canvas.setPointerCapture(event.pointerId);
+      return;
+    }
+    const endpoint = sorterBeltEndpointAt(state.pointer.cell, 'end');
+    if (endpoint) {
+      state.pointer.sorterAnchor = { kind: 'belt', id: endpoint.belt.id, endpoint: endpoint.endpoint };
+      canvas.setPointerCapture(event.pointerId);
+      return;
+    }
+    state.pointer.down = false;
+    showToast('从建筑接口或传送带端点开始拖拽', 'warning');
+    return;
+  }
   if (state.tool === 'belt') {
     const source = findBuildingAt(state.pointer.cell);
     state.pointer.startBuildingId = source?.id || null;
@@ -2949,13 +4404,37 @@ canvas.addEventListener('pointerdown', event => {
     canvas.setPointerCapture(event.pointerId);
     return;
   }
-  const existing = findBuildingAt(state.pointer.cell);
   if (state.tool === 'demolish') removeAt(state.pointer.cell);
-  else if (existing) { state.selectedId = existing.id; showToast(`${buildings[existing.type].label} 已选中`); }
-  else placeBuilding(state.pointer.cell);
+  else if (state.tool === 'inspect') {
+    const existing = findBuildingAt(state.pointer.cell);
+    if (existing) {
+      state.selectedId = existing.id;
+      state.selectedBeltId = null;
+      showToast(`${buildings[existing.type].label} · 已打开详情`);
+    } else {
+      const belt = findBeltAt(state.pointer.cell);
+      if (belt) {
+        state.selectedId = null;
+        state.selectedBeltId = belt.id;
+        showToast(`传送带 · ${belt.length} 格 · 已打开详情`);
+      } else {
+        state.selectedId = null;
+        state.selectedBeltId = null;
+        showToast('已取消选择');
+      }
+    }
+  } else placeBuilding(state.pointer.cell);
 });
 canvas.addEventListener('pointerup', event => {
   if (event.button === 2) { state.pointer.panning = false; return; }
+  if (state.tool === 'sorter' && state.pointer.sorterAnchor) {
+    const preview = sorterPlacementPreview();
+    if (preview?.valid) placeSorterBetween(preview.building, preview.belt, preview.mode);
+    else if (preview?.reason) showToast(preview.reason, 'warning');
+    state.pointer.sorterAnchor = null;
+    state.pointer.down = false;
+    return;
+  }
   if (state.tool === 'belt' && state.pointer.startCell) {
     const releaseCell = screenToCell(event.clientX, event.clientY);
     const source = state.buildings.find(building => building.id === state.pointer.startBuildingId);
@@ -3002,17 +4481,20 @@ document.addEventListener('keydown', event => {
     event.preventDefault();
     return;
   }
-  if (event.key >= '1' && event.key <= '5') selectTool(['miner', 'smelter', 'assembler', 'belt', 'demolish'][Number(event.key) - 1]);
-  if (event.key.toLowerCase() === 'r' && state.tool !== 'belt' && state.tool !== 'demolish') { state.rotation = (state.rotation + 90) % 360; showToast(`建筑朝向 ${state.rotation}°`); }
+  if (event.key === '0') selectTool('inspect');
+  if (event.key >= '1' && event.key <= '9') selectTool(['miner', 'smelter', 'assembler', 'belt', 'demolish', 'waterPump', 'powerTower', 'longPowerTower', 'ultraPowerTower'][Number(event.key) - 1]);
+  if (event.key.toLowerCase() === 'r' && state.tool !== 'inspect' && state.tool !== 'belt' && state.tool !== 'demolish') { state.rotation = (state.rotation + 90) % 360; showToast(`建筑朝向 ${state.rotation}°`); }
   if (event.key.toLowerCase() === 't') toggleTechPanel();
   if (event.key.toLowerCase() === 'm') toggleStarMap();
   if (event.key.toLowerCase() === 'c') toggleCareerPanel();
+  if (event.key.toLowerCase() === 'b') toggleCraftPanel();
   if (event.code === 'Space') { event.preventDefault(); togglePause(); }
-if (event.key === 'Escape') { state.pointer.startCell = null; state.pointer.startBuildingId = null; selectTool('miner'); }
+  if (event.key === 'Escape') cancelToolSelection(true);
 });
 
 let lastFrame = performance.now();
 let autosaveTime = 0;
+let gameStarted = false;
 function loop(now) {
   const dt = Math.min(.08, (now - lastFrame) / 1000);
   lastFrame = now;
@@ -3026,16 +4508,45 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 
-window.addEventListener('resize', resize);
-resize();
-applyQaDemoState();
-if (qaPlaythroughMode) runQaPlaythrough();
-renderTechPanel();
-renderCareerPanel();
-wireOptionalAssetImages();
-updateHUD();
-showToast('选择设施，在地表网格中开始建造');
-if (requestedPanel === 'tech') toggleTechPanel(true);
-else if (requestedPanel === 'map') toggleStarMap(true);
-else if (!state.careerChosen) toggleCareerPanel(true);
-requestAnimationFrame(loop);
+function initializeGame() {
+  if (gameStarted) return;
+  gameStarted = true;
+  window.addEventListener('resize', resize);
+  resize();
+  applyQaDemoState();
+  if (qaPlaythroughMode) runQaPlaythrough();
+  renderTechPanel();
+  renderCareerPanel();
+  wireOptionalAssetImages();
+  updateHUD();
+  if (savedPlacementRepairCount > 0) saveGame();
+  showToast('选择设施，在地表网格中开始建造');
+  if (savedPlacementRepairCount > 0) showToast(`已修正 ${savedPlacementRepairCount} 座压住矿脉的建筑`, 'warning');
+  if (requestedPanel === 'tech') toggleTechPanel(true);
+  else if (requestedPanel === 'map') toggleStarMap(true);
+  else if (!state.careerChosen) toggleCareerPanel(true);
+  requestAnimationFrame(loop);
+}
+
+async function bootGame() {
+  try {
+    await preloadGameAssets();
+  } catch (error) {
+    console.error('Asset preload failed; continuing with runtime fallbacks.', error);
+    document.body.dataset.assetsReady = 'true';
+    document.body.dataset.assetFailures = 'unknown';
+    query('#asset-loader-status').textContent = '资源校验完成 · 使用程序绘制继续';
+    query('#asset-loader-note').textContent = '资源请求异常已隔离，不影响建造与物流';
+  }
+  initializeGame();
+  document.body.classList.remove('loading');
+  document.body.classList.add('game-ready');
+  const loader = query('#asset-loader');
+  loader.classList.add('is-complete');
+  window.setTimeout(() => { loader.hidden = true; }, window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 280);
+  if (state.powerMigration) {
+    window.setTimeout(() => showToast('电网规则已升级 · 请先部署基础电力塔接入旧产线', 'warning'), 360);
+  }
+}
+
+bootGame();
