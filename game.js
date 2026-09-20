@@ -2,12 +2,20 @@ const canvas = document.querySelector('#game-canvas');
 const ctx = canvas.getContext('2d');
 const shell = document.querySelector('#game-shell');
 const TILE = 48;
-const WORLD_BOUNDS = Object.freeze({ minX: -18, maxX: 18, minY: -12, maxY: 12 });
+// One map represents a whole planet.  The landing zone is intentionally only
+// a small, resource-scarce part of the world; the camera can pan to the remote
+// extraction regions as the factory grows.
+const WORLD_BOUNDS = Object.freeze({ minX: -36, maxX: 36, minY: -24, maxY: 24 });
 const terrainRegions = [
-  { kind: 'rock', label: '玄武岩岩场', short: '岩石', minX: -16, maxX: -13, minY: -9, maxY: -6 },
+  { kind: 'rock', label: '玄武岩岩场', short: '岩石', minX: -33, maxX: -27, minY: -20, maxY: -14 },
   { kind: 'rock', label: '玄武岩岩场', short: '岩石', minX: 12, maxX: 15, minY: -8, maxY: -5 },
+  { kind: 'rock', label: '玄武岩岩场', short: '岩石', minX: 26, maxX: 34, minY: -18, maxY: -12 },
+  { kind: 'rock', label: '玄武岩岩场', short: '岩石', minX: -6, maxX: 2, minY: 18, maxY: 23 },
   { kind: 'water', label: '低洼水域', short: '水域', minX: -15, maxX: -11, minY: 7, maxY: 10 },
-  { kind: 'water', label: '低洼水域', short: '水域', minX: 15, maxX: 17, minY: 8, maxY: 10 }
+  { kind: 'water', label: '低洼水域', short: '水域', minX: 15, maxX: 17, minY: 8, maxY: 10 },
+  { kind: 'water', label: '低洼水域', short: '水域', minX: -33, maxX: -25, minY: 12, maxY: 19 },
+  { kind: 'water', label: '低洼水域', short: '水域', minX: 25, maxX: 35, minY: 14, maxY: 21 },
+  { kind: 'water', label: '低洼水域', short: '水域', minX: -35, maxX: -29, minY: -3, maxY: 2 }
 ];
 const SAVE_KEY = 'stellar-echo-sandbox-v2';
 const LEGACY_SAVE_KEY = 'stellar-echo-sandbox-v1';
@@ -18,26 +26,34 @@ const requestedPanel = urlParams.get('panel');
 
 const assets = {};
 const assetPaths = {
-  copper: 'output/imagegen/resource-copper-ore-v01.png',
-  silicon: 'output/imagegen/resource-silicon-crystal-v01.png',
-  iron: 'output/imagegen/resource-iron-ore-v01.png',
-  ice: 'output/imagegen/resource-ice-crystal-v01.png',
-  copperIngot: 'output/imagegen/resource-copper-ingot-v01.png',
-  siliconWafer: 'output/imagegen/resource-silicon-wafer-v01.png',
-  processor: 'output/imagegen/resource-processor-chip-v01.png',
-  titanium: 'output/imagegen/resource-titanium-crystal-v01.png',
+  copper: 'godot_game/assets/generated/resource-copper-ore-v01.png',
+  silicon: 'godot_game/assets/generated/resource-silicon-crystal-v01.png',
+  iron: 'godot_game/assets/generated/resource-iron-ore-v01.png',
+  ice: 'godot_game/assets/generated/resource-ice-crystal-v01.png',
+  copperIngot: 'godot_game/assets/generated/resource-copper-ingot-v01.png',
+  siliconWafer: 'godot_game/assets/generated/resource-silicon-wafer-v01.png',
+  processor: 'godot_game/assets/generated/resource-processor-chip-v01.png',
+  titanium: 'godot_game/assets/generated/resource-titanium-crystal-v01.png',
   electromagneticCube: 'godot_game/assets/generated/resource_matrix_v02.png',
-  miner: 'output/imagegen/building-mining-drill-v01.png',
-  smelter: 'output/imagegen/building-smelter-v01.png',
-  assembler: 'output/imagegen/building-assembler-v01.png',
+  miner: 'godot_game/assets/generated/building-mining-drill-v01.png',
+  smelter: 'godot_game/assets/generated/building-smelter-v01.png',
+  assembler: 'godot_game/assets/generated/building-assembler-v01.png',
   researchLab: 'godot_game/assets/generated/building_research-lab_north.png',
   sorter: 'godot_game/assets/generated/building_sorter_north.png',
   wind: 'godot_game/assets/generated/building_wind-generator_north.png',
   thermal: 'godot_game/assets/generated/building_thermal-generator_north.png',
   oilExtractor: 'godot_game/assets/generated/building_oil-extractor_north.png',
   storage: 'godot_game/assets/generated/building_storage_north.png',
-  groundTile: 'output/imagegen/godot-v02-ground-tile.png',
-  rockTile: 'output/imagegen/godot-v02-ground-tile.png',
+  waterPump: 'godot_game/assets/generated/building_water-pump_v01.png',
+  gasExtractor: 'godot_game/assets/generated/building_gas-extractor_v01.svg',
+  powerTower: 'godot_game/assets/generated/building_power-tower_v01.svg',
+  longPowerTower: 'godot_game/assets/generated/building_long-power-tower_v01.svg',
+  ultraPowerTower: 'godot_game/assets/generated/building_ultra-power-tower_v01.svg',
+  solidStorage: 'godot_game/assets/generated/building_solid-storage_v01.svg',
+  liquidStorage: 'godot_game/assets/generated/building_liquid-storage_v01.svg',
+  gasStorage: 'godot_game/assets/generated/building_gas-storage_v01.svg',
+  groundTile: 'godot_game/assets/generated/godot-v02-ground-tile.png',
+  rockTile: 'godot_game/assets/generated/godot-v02-ground-tile.png',
   waterTile: 'godot_game/assets/generated/terrain_water_tile_v01.png',
 };
 Object.entries(assetPaths).forEach(([key, path]) => {
@@ -80,8 +96,8 @@ async function preloadGameAssets() {
   };
   Object.entries(assetPaths).forEach(([key, src]) => addEntry(src, assets[key], key));
   [...document.images].forEach((image, index) => addEntry(image.currentSrc || image.src, image, `界面素材 ${index + 1}`));
-  addEntry('output/imagegen/stellar-ring-concept-v01.png', null, '星图背景');
-  if (typeof careerCatalog !== 'undefined') Object.values(careerCatalog).forEach(career => addEntry(`output/imagegen/${career.image}`, null, career.label));
+  addEntry('godot_game/assets/generated/stellar-ring-concept-v01.png', null, '星图背景');
+  if (typeof careerCatalog !== 'undefined') Object.values(careerCatalog).forEach(career => addEntry(`godot_game/assets/generated/${career.image}`, null, career.label));
 
   const loader = query('#asset-loader');
   const fill = query('#asset-loader-fill');
@@ -115,35 +131,38 @@ async function preloadGameAssets() {
 }
 
 const resources = {
-  copper: { label: '铜', color: '#ff9b3d', image: 'copper' },
-  silicon: { label: '硅', color: '#69d8da', image: 'silicon' },
-  iron: { label: '铁', color: '#b56e58', image: 'iron' },
-  coal: { label: '煤', color: '#827a88' },
-  crudeOil: { label: '原油', color: '#c97849' },
-  water: { label: '水', color: '#5cc8ed' },
-  ironIngot: { label: '铁锭', color: '#d58a6c' },
-  ice: { label: '冰', color: '#8ccfff', image: 'ice' },
-  copperIngot: { label: '铜锭', color: '#ffc266', image: 'copperIngot' },
-  siliconWafer: { label: '硅片', color: '#b0ffff', image: 'siliconWafer' },
-  processor: { label: '芯片', color: '#c7d94c', image: 'processor' },
-  titanium: { label: '钛', color: '#b9a7ff', image: 'titanium' },
-  electromagneticCube: { label: '电磁矩阵', color: '#61d9e4', image: 'electromagneticCube' },
-  energyCube: { label: '能量矩阵', color: '#f5c85b', image: 'energyCube' },
-  structureCube: { label: '结构矩阵', color: '#e894e8', image: 'structureCube' },
-  informationCube: { label: '信息矩阵', color: '#7ed6ff', image: 'informationCube' }
+  copper: { label: '铜', color: '#ff9b3d', image: 'copper', form: 'solid', tier: 0 },
+  silicon: { label: '硅', color: '#69d8da', image: 'silicon', form: 'solid', tier: 0 },
+  iron: { label: '铁', color: '#b56e58', image: 'iron', form: 'solid', tier: 0 },
+  coal: { label: '煤', color: '#827a88', form: 'solid', tier: 0 },
+  crudeOil: { label: '原油', color: '#c97849', form: 'liquid', tier: 0 },
+  water: { label: '水', color: '#5cc8ed', form: 'liquid', tier: 0 },
+  naturalGas: { label: '天然气', color: '#b6e7ba', form: 'gas', tier: 0 },
+  ice: { label: '冰', color: '#8ccfff', image: 'ice', form: 'solid', tier: 0 },
+  titanium: { label: '钛', color: '#b9a7ff', image: 'titanium', form: 'solid', tier: 0 },
+  ironIngot: { label: '铁锭', color: '#d58a6c', form: 'solid', tier: 1 },
+  copperIngot: { label: '铜锭', color: '#ffc266', image: 'copperIngot', form: 'solid', tier: 1 },
+  siliconWafer: { label: '硅片', color: '#b0ffff', image: 'siliconWafer', form: 'solid', tier: 1 },
+  processor: { label: '芯片', color: '#c7d94c', image: 'processor', form: 'solid', tier: 2 },
+  electromagneticCube: { label: '电磁矩阵', color: '#61d9e4', image: 'electromagneticCube', form: 'solid', tier: 3 },
+  energyCube: { label: '能量矩阵', color: '#f5c85b', image: 'energyCube', form: 'solid', tier: 3 },
+  structureCube: { label: '结构矩阵', color: '#e894e8', image: 'structureCube', form: 'solid', tier: 3 },
+  informationCube: { label: '信息矩阵', color: '#7ed6ff', image: 'informationCube', form: 'solid', tier: 4 },
+  stellarFrame: { label: '恒星框架组件', color: '#f5e29b', form: 'solid', tier: 5 }
 };
 
 const sorterRouteCatalog = [
-  'iron', 'copper', 'silicon', 'coal', 'crudeOil', 'water', 'ice', 'titanium',
+  'iron', 'copper', 'silicon', 'coal', 'crudeOil', 'water', 'naturalGas', 'ice', 'titanium',
   'ironIngot', 'copperIngot', 'siliconWafer', 'processor',
   'electromagneticCube', 'energyCube', 'structureCube', 'informationCube'
 ];
 
 const buildings = {
-  miner: { label: '采矿机', size: 2, color: '#ff9b3d', power: .6, cost: { iron: 8, copper: 2 }, tech: 'foundation', image: 'miner' },
+  miner: { label: '采矿机', size: 2, color: '#ff9b3d', power: .6, cost: { iron: 8, copper: 2 }, tech: 'foundation', image: 'miner', extractionForm: 'solid' },
   smelter: { label: '冶炼机', size: 2, color: '#f7c35e', power: .9, cost: { iron: 10, copper: 2 }, tech: 'foundation', image: 'smelter' },
-  waterPump: { label: '水泵', size: 2, color: '#5cc8ed', power: .7, cost: { iron: 10, copper: 2 }, tech: 'foundation' },
-  powerTower: { label: '电力塔', size: 1, color: '#69d8da', power: .08, transmissionRange: 5, cost: { iron: 6, copper: 2 }, tech: 'foundation' },
+  waterPump: { label: '水泵', size: 2, color: '#5cc8ed', power: .7, cost: { iron: 10, copper: 2 }, tech: 'foundation', image: 'waterPump', extractionForm: 'liquid' },
+  gasExtractor: { label: '天然气压采机', size: 2, color: '#a8e7dd', power: 1.9, cost: { iron: 20, copper: 6, processor: 1 }, tech: 'gas-extraction', image: 'gasExtractor', extractionForm: 'gas' },
+  powerTower: { label: '电力塔', size: 1, color: '#69d8da', power: .08, transmissionRange: 5, cost: { iron: 6, copper: 2 }, tech: 'foundation', image: 'powerTower' },
   // The first assembler is the bootstrap for processors, so it cannot itself
   // require a processor. Later buildings still carry the same production
   // recipe and remain gated by power, inputs, and logistics.
@@ -154,11 +173,15 @@ const buildings = {
   workbench: { label: '工作台', size: 2, color: '#e8a46e', power: .5, cost: { iron: 12, copper: 4 }, tech: 'workbench-tech' },
   wind: { label: '风力发电机', size: 2, color: '#a8e7dd', power: 0, generation: 2.6, cost: { iron: 10, copper: 6 }, tech: 'wind-power' },
   thermal: { label: '火力发电机', size: 2, color: '#ee765c', power: .2, generation: 6, cost: { iron: 18, copper: 10 }, tech: 'thermal-power' },
-  longPowerTower: { label: '远距离电力塔', size: 1, color: '#8ccfff', power: .14, transmissionRange: 9, cost: { iron: 12, copper: 6, processor: 1 }, tech: 'power-transmission' },
-  ultraPowerTower: { label: '超远距离电力塔', size: 2, color: '#c58cff', power: .24, transmissionRange: 15, cost: { iron: 24, copper: 12, processor: 3 }, tech: 'advanced-power-grid' },
-  oilExtractor: { label: '石油提取机', size: 2, color: '#d18a57', power: 2.2, cost: { iron: 24, processor: 2 }, tech: 'oil-processing' },
+  longPowerTower: { label: '远距离电力塔', size: 1, color: '#8ccfff', power: .14, transmissionRange: 9, cost: { iron: 12, copper: 6, processor: 1 }, tech: 'power-transmission', image: 'longPowerTower' },
+  ultraPowerTower: { label: '超远距离电力塔', size: 2, color: '#c58cff', power: .24, transmissionRange: 15, cost: { iron: 24, copper: 12, processor: 3 }, tech: 'advanced-power-grid', image: 'ultraPowerTower' },
+  oilExtractor: { label: '石油提取机', size: 2, color: '#d18a57', power: 2.2, cost: { iron: 24, processor: 2 }, tech: 'oil-processing', image: 'oilExtractor', extractionForm: 'liquid' },
   researchLab: { label: '科研站', size: 2, color: '#7ed6ff', power: 1.6, cost: { iron: 20, processor: 4 }, tech: 'foundation', image: 'researchLab' },
-  storage: { label: '物流仓储', size: 2, color: '#a7c7ff', power: .15, cost: { iron: 16, copper: 4 }, tech: 'foundation', image: 'storage' },
+  // `storage` remains as a save-compatible alias for the old starter chest.
+  storage: { label: '固体仓储', size: 2, color: '#a7c7ff', power: .15, cost: { iron: 16, copper: 4 }, tech: 'foundation', image: 'storage', storageForm: 'solid' },
+  solidStorage: { label: '固体仓储', size: 2, color: '#a7c7ff', power: .15, cost: { iron: 16, copper: 4 }, tech: 'foundation', image: 'solidStorage', storageForm: 'solid' },
+  liquidStorage: { label: '液体仓储', size: 2, color: '#5cc8ed', power: .2, cost: { iron: 18, copper: 4 }, tech: 'fluid-storage', image: 'liquidStorage', storageForm: 'liquid' },
+  gasStorage: { label: '气体仓储', size: 2, color: '#b6e7ba', power: .22, cost: { iron: 20, copper: 6, processor: 1 }, tech: 'gas-storage', image: 'gasStorage', storageForm: 'gas' },
   logisticsStation: { label: '行星物流站', size: 3, color: '#c58cff', power: 2.8, cost: { iron: 32, processor: 6, titanium: 4 }, tech: 'interstellar-logistics' }
 };
 
@@ -172,34 +195,43 @@ const cubeRecipes = {
 const techTree = {
   mainline: [
     { id: 'planetary-logistics', label: '行星物流', short: '物流主干', description: '建立行星级物流网络，研究分拣与长距离运输。', cube: 'electromagneticCube', cost: 12 },
-    { id: 'automated-smelting', label: '自动冶炼', short: '工业主干', description: '把原矿加工成稳定的工业中间品，并授权第一座自动组装设备。', requires: ['planetary-logistics'], cube: 'energyCube', cost: 16, unlocks: ['assembler'], upgrades: ['smelter'], effectText: '解锁组装机 · 冶炼机速度 +33%' },
-    { id: 'matrix-lab', label: '矩阵实验室', short: '科研主干', description: '将研究矩阵转化为可持续的科技推进力。', requires: ['automated-smelting'], cube: 'structureCube', cost: 22, upgrades: ['researchLab'], effectText: '科研站矩阵制备速度 +25%' },
+    { id: 'automated-smelting', label: '自动冶炼', short: '工业主干', description: '把原矿加工成稳定的工业中间品，并授权第一座自动组装设备。', requires: ['planetary-logistics'], cube: 'energyCube', cost: 16, unlocks: ['assembler'], upgrades: ['smelter'], upgradeTier: 2, effectText: '解锁组装机 · 冶炼机速度 +33%' },
+    { id: 'matrix-lab', label: '矩阵实验室', short: '科研主干', description: '将研究矩阵转化为可持续的科技推进力。', requires: ['automated-smelting'], cube: 'structureCube', cost: 22, upgrades: ['researchLab'], upgradeTier: 2, effectText: '科研站矩阵制备速度 +25%' },
     { id: 'interstellar-logistics', label: '星际物流', short: '跨星际主干', description: '接入恒星系航线，授权行星物流站并允许派遣货运舱回收异星资源。', requires: ['matrix-lab'], cube: 'informationCube', cost: 32, unlocks: ['行星物流站、星图与货运舱'] },
     { id: 'stellar-network', label: '恒星网络', short: '跨星际主干', description: '让远端信标加入同一条物流网络，开放档案星航线。', requires: ['interstellar-logistics'], cube: 'informationCube', cost: 40, unlocks: ['档案星航线'] },
     { id: 'dyson-frame', label: '戴森框架', short: '恒星工程', description: '用异星资源搭建包围恒星的第一圈能量框架。', requires: ['stellar-network'], cube: 'structureCube', cost: 48, unlocks: ['恒星工程阶段'] }
   ],
   branches: [
-    { id: 'sorter-tech', label: '智能分拣', short: '物流分支', description: '升级基础分拣器的识别与分流能力，让同一条物流线可以按物料接入不同产线。', requires: ['planetary-logistics'], cube: 'electromagneticCube', cost: 12, upgrades: ['sorter'], effectText: '分拣器获得多出口规则与自动分流' },
-    { id: 'belt-mk2', label: '高速传送', short: '物流分支', description: '提升物流网络的吞吐能力。', requires: ['sorter-tech'], cube: 'energyCube', cost: 14, upgrades: ['belt'], effectText: '传送带速度 +43%' },
-    { id: 'storage-mk2', label: '仓储扩容', short: '物流分支', description: '增加仓储箱容量，并允许更高频率的分拣器取放。', requires: ['sorter-tech'], cube: 'energyCube', cost: 18, upgrades: ['storage'], effectText: '物流仓储容量 240 → 480' },
+    { id: 'sorter-tech', label: '智能分拣', short: '物流分支', description: '升级基础分拣器的识别与分流能力，让同一条物流线可以按物料接入不同产线。', requires: ['planetary-logistics'], cube: 'electromagneticCube', cost: 12, upgrades: ['sorter'], upgradeTier: 2, effectText: '分拣器获得多出口规则与自动分流' },
+    { id: 'belt-mk2', label: '高速传送', short: '物流分支', description: '提升物流网络的吞吐能力。', requires: ['sorter-tech'], cube: 'energyCube', cost: 14, upgrades: ['belt'], upgradeTier: 2, effectText: '传送带速度 +43%' },
+    { id: 'storage-mk2', label: '仓储扩容', short: '物流分支', description: '增加仓储箱容量，并允许更高频率的分拣器取放。', requires: ['sorter-tech'], cube: 'energyCube', cost: 18, upgrades: ['storage', 'solidStorage', 'liquidStorage', 'gasStorage'], upgradeTier: 2, effectText: '仓储容量提升至 Mk-II' },
     { id: 'wind-power', label: '风能捕获', short: '能源分支', description: '用行星风场提供稳定的基础电力。', requires: ['planetary-logistics'], cube: 'electromagneticCube', cost: 8, unlocks: ['wind'], effectText: '解锁风力发电机' },
     { id: 'thermal-power', label: '热能转化', short: '能源分支', description: '消耗煤炭，将化学能转化为电力。', requires: ['wind-power'], cube: 'energyCube', cost: 14, unlocks: ['thermal'], effectText: '解锁火力发电机' },
     { id: 'oil-processing', label: '石化开采', short: '能源分支', description: '从原油渗流区建立压力开采。', requires: ['planetary-logistics'], cube: 'energyCube', cost: 16, unlocks: ['oilExtractor'], effectText: '解锁石油提取机' },
-    { id: 'workbench-tech', label: '精密工作台', short: '制造分支', description: '允许小批量制造电路与研究组件。', cube: 'electromagneticCube', cost: 8, unlocks: ['workbench'], upgrades: ['workbench'], effectText: '解锁工作台 · 工作台速度 +27%' },
-    { id: 'advanced-assembly', label: '高级组装', short: '制造分支', description: '为处理器和矩阵生产提供更高效率。', requires: ['automated-smelting'], cube: 'structureCube', cost: 18, upgrades: ['assembler', 'workbench'], effectText: '组装机与工作台速度 +30%' },
-    { id: 'mining-mk2', label: '高压采掘', short: '工业分支', description: '升级采矿机钻头与排矿节拍，减少矿脉等待时间。', requires: ['planetary-logistics'], cube: 'energyCube', cost: 18, upgrades: ['miner'], effectText: '采矿机速度 +35%' },
+    { id: 'workbench-tech', label: '精密工作台', short: '制造分支', description: '允许小批量制造电路与研究组件。', cube: 'electromagneticCube', cost: 8, unlocks: ['workbench'], upgrades: ['workbench'], upgradeTier: 2, effectText: '解锁工作台 · 工作台速度 +27%' },
+    { id: 'advanced-assembly', label: '高级组装', short: '制造分支', description: '为处理器和矩阵生产提供更高效率。', requires: ['automated-smelting'], cube: 'structureCube', cost: 18, upgrades: ['assembler', 'workbench'], upgradeTier: 3, effectText: '组装机与工作台速度 +30%' },
+    { id: 'mining-mk2', label: '高压采掘', short: '工业分支', description: '升级采矿机钻头与排矿节拍，减少矿脉等待时间。', requires: ['planetary-logistics'], cube: 'energyCube', cost: 18, upgrades: ['miner'], upgradeTier: 2, effectText: '采矿机速度 +35%' },
     { id: 'power-transmission', label: '远距输电', short: '能源分支', description: '用高压线圈延长电力塔的传输半径，允许多个局部电网稳定互联。', requires: ['thermal-power'], cube: 'energyCube', cost: 18, unlocks: ['longPowerTower'], effectText: '解锁远距离电力塔 · 基础电塔覆盖范围 +15%' },
-    { id: 'power-grid-mk2', label: '电网增容', short: '能源分支', description: '升级发电设施的能量转换模块，提高整个生存电网的余量。', requires: ['thermal-power'], cube: 'structureCube', cost: 24, upgrades: ['wind', 'thermal'], effectText: '风力与火力发电机输出 +25%' },
+    { id: 'power-grid-mk2', label: '电网增容', short: '能源分支', description: '升级发电设施的能量转换模块，提高整个生存电网的余量。', requires: ['thermal-power'], cube: 'structureCube', cost: 24, upgrades: ['wind', 'thermal'], upgradeTier: 2, effectText: '风力与火力发电机输出 +25%' },
     { id: 'advanced-power-grid', label: '超远距骨干网', short: '能源分支', description: '建立跨区域骨干输电，允许超远距离电力塔接管整片工业区。', requires: ['power-transmission', 'power-grid-mk2'], cube: 'informationCube', cost: 32, unlocks: ['ultraPowerTower'], effectText: '解锁超远距离电力塔 · 全部电塔覆盖范围 +10%' },
-    { id: 'oil-extractor-mk2', label: '深层泵压', short: '能源分支', description: '为石油提取机加装深层泵压模块，提升原油采集速率。', requires: ['oil-processing'], cube: 'structureCube', cost: 20, upgrades: ['oilExtractor'], effectText: '石油提取机速度 +35%' }
+    { id: 'oil-extractor-mk2', label: '深层泵压', short: '能源分支', description: '为石油提取机加装深层泵压模块，提升原油采集速率。', requires: ['oil-processing'], cube: 'structureCube', cost: 20, upgrades: ['oilExtractor'], upgradeTier: 2, effectText: '石油提取机速度 +35%' },
+    { id: 'fluid-storage', label: '流体罐区', short: '物流分支', description: '用密封罐体存放水与原油。液体仓储只接受液体资源，不能混入固体或气体。', requires: ['planetary-logistics'], cube: 'energyCube', cost: 16, unlocks: ['liquidStorage'], effectText: '解锁液体仓储' },
+    { id: 'gas-extraction', label: '气体压采', short: '能源分支', description: '建立气体采集头，把天然气从独立气田压入生产网络。', requires: ['oil-processing'], cube: 'structureCube', cost: 22, unlocks: ['gasExtractor'], effectText: '解锁天然气压采机' },
+    { id: 'gas-storage', label: '高压气库', short: '物流分支', description: '使用高压容器存放天然气，气体资源不能进入固体或液体仓储。', requires: ['gas-extraction'], cube: 'informationCube', cost: 28, unlocks: ['gasStorage'], effectText: '解锁气体仓储' },
+    { id: 'logistics-mk3', label: '物流 Mk-III', short: '物流分支', description: '第三代物流控制器同步提升传送带、分拣器和三类仓储的吞吐能力。', requires: ['sorter-tech', 'belt-mk2', 'storage-mk2'], cube: 'structureCube', cost: 26, upgrades: ['belt', 'sorter', 'storage', 'solidStorage', 'liquidStorage', 'gasStorage'], upgradeTier: 3, effectText: '物流设备升级至 Mk-III' },
+    { id: 'logistics-mk4', label: '物流 Mk-IV', short: '物流分支', description: '相位物流节点进一步压缩传输延迟，并扩大三类仓储容量。', requires: ['logistics-mk3', 'advanced-assembly'], cube: 'informationCube', cost: 40, upgrades: ['belt', 'sorter', 'storage', 'solidStorage', 'liquidStorage', 'gasStorage'], upgradeTier: 4, effectText: '物流设备升级至 Mk-IV' },
+    { id: 'logistics-mk5', label: '物流 Mk-V', short: '物流分支', description: '恒星级物流协议，提供最高移动速度、分拣速度和仓储容量。', requires: ['logistics-mk4', 'stellar-network'], cube: 'informationCube', cost: 64, upgrades: ['belt', 'sorter', 'storage', 'solidStorage', 'liquidStorage', 'gasStorage'], upgradeTier: 5, effectText: '物流设备升级至 Mk-V' },
+    { id: 'industrial-mk3', label: '工业 Mk-III', short: '工业分支', description: '让采集、加工与组装设备进入中型工厂效率档位。', requires: ['mining-mk2', 'advanced-assembly'], cube: 'structureCube', cost: 28, upgrades: ['miner', 'smelter', 'assembler', 'workbench', 'waterPump', 'oilExtractor', 'gasExtractor'], upgradeTier: 3, effectText: '工业设备升级至 Mk-III' },
+    { id: 'industrial-mk4', label: '工业 Mk-IV', short: '工业分支', description: '高级执行器降低加工节拍和采集等待。', requires: ['industrial-mk3', 'matrix-lab'], cube: 'informationCube', cost: 44, upgrades: ['miner', 'smelter', 'assembler', 'workbench', 'waterPump', 'oilExtractor', 'gasExtractor'], upgradeTier: 4, effectText: '工业设备升级至 Mk-IV' },
+    { id: 'industrial-mk5', label: '工业 Mk-V', short: '工业分支', description: '恒星工程级设备，材料消耗更高但可以支撑远端巨型产线。', requires: ['industrial-mk4', 'stellar-network'], cube: 'informationCube', cost: 68, upgrades: ['miner', 'smelter', 'assembler', 'workbench', 'waterPump', 'oilExtractor', 'gasExtractor'], upgradeTier: 5, effectText: '工业设备升级至 Mk-V' }
   ]
 };
-const foundationTech = { id: 'foundation', label: '基础工业授权', short: '初始权限', description: '授予着陆舱周边的第一套工业设施许可证。基础电力塔把着陆舱、发电机和早期产线接成局部电网。', requires: [], cube: 'electromagneticCube', cost: 0, unlocks: ['miner', 'smelter', 'waterPump', 'researchLab', 'storage', 'sorter', 'powerTower'], effectText: '解锁采矿机、水泵、冶炼机、科研站、物流仓储、基础分拣器与电力塔' };
+const foundationTech = { id: 'foundation', label: '基础工业授权', short: '初始权限', description: '授予着陆舱周边的第一套工业设施许可证。基础电力塔把着陆舱、发电机和早期产线接成局部电网。', requires: [], cube: 'electromagneticCube', cost: 0, unlocks: ['miner', 'smelter', 'waterPump', 'researchLab', 'storage', 'solidStorage', 'sorter', 'powerTower'], effectText: '解锁采矿机、水泵、冶炼机、科研站、固体仓储、基础分拣器与电力塔' };
 const techNodes = [foundationTech, ...techTree.mainline, ...techTree.branches];
 const techById = Object.fromEntries(techNodes.map(tech => [tech.id, tech]));
 const startingTech = ['foundation'];
-const startingInventory = { iron: 72, copper: 28, silicon: 16, coal: 4, crudeOil: 0, water: 0, titanium: 0, ironIngot: 4, copperIngot: 4, siliconWafer: 4, processor: 6, electromagneticCube: 0, energyCube: 0, structureCube: 0, informationCube: 0 };
-const startingStorageStock = { iron: 96, copper: 48, silicon: 32, coal: 8, crudeOil: 0, water: 0, titanium: 0, ironIngot: 4, copperIngot: 6, siliconWafer: 6, processor: 8, electromagneticCube: 0, energyCube: 0, structureCube: 0, informationCube: 0 };
+const startingInventory = { iron: 72, copper: 28, silicon: 16, coal: 4, crudeOil: 0, water: 0, naturalGas: 0, titanium: 0, ironIngot: 4, copperIngot: 4, siliconWafer: 4, processor: 6, electromagneticCube: 0, energyCube: 0, structureCube: 0, informationCube: 0, stellarFrame: 0 };
+const startingStorageStock = { iron: 96, copper: 48, silicon: 32, coal: 8, titanium: 0, ironIngot: 4, copperIngot: 6, siliconWafer: 6, processor: 8, electromagneticCube: 0, energyCube: 0, structureCube: 0, informationCube: 0, stellarFrame: 0 };
 const startingKits = { miner: 1, smelter: 1, waterPump: 0, sorter: 1, powerTower: 1, longPowerTower: 0, ultraPowerTower: 0, belt: 8 };
 const handcraftRecipes = [
   { id: 'miner', label: '采矿机套件', description: '覆盖矿脉，开始采集基础原矿。', outputLabel: '采矿机 ×1', outputType: 'kit', output: 'miner', amount: 1, cost: { iron: 8, copper: 2 } },
@@ -234,24 +266,40 @@ const careerCatalog = {
 
 const nodes = [
   { id: 'copper-north', x: -6, y: -2, resource: 'copper', amount: 62400 },
-  { id: 'copper-south', x: 0, y: 8, resource: 'copper', amount: 48800 },
-  { id: 'copper-west', x: -12, y: 2, resource: 'copper', amount: 35200 },
+  { id: 'copper-south', x: -24, y: 16, resource: 'copper', amount: 48800 },
+  { id: 'copper-west', x: -30, y: 4, resource: 'copper', amount: 35200 },
   { id: 'silicon-west', x: 5, y: -4, resource: 'silicon', amount: 28100 },
-  { id: 'silicon-north', x: 1, y: -8, resource: 'silicon', amount: 33400 },
-  { id: 'silicon-south', x: 10, y: 9, resource: 'silicon', amount: 21600 },
-  { id: 'iron-east', x: 6, y: 5, resource: 'iron', amount: 91600 },
-  { id: 'iron-west', x: -12, y: -2, resource: 'iron', amount: 74600 },
-  { id: 'iron-south', x: 2, y: 11, resource: 'iron', amount: 52800 },
-  { id: 'ice-south', x: -6, y: 7, resource: 'ice', amount: 46200 },
-  { id: 'ice-north', x: -2, y: -10, resource: 'ice', amount: 29800 },
-  { id: 'water-west', x: -10, y: 7, resource: 'water', amount: 100000 },
-  { id: 'water-east', x: 14, y: 8, resource: 'water', amount: 82000 },
-  { id: 'coal-north-east', x: 10, y: -5, resource: 'coal', amount: 53600 },
-  { id: 'coal-west', x: -10, y: -8, resource: 'coal', amount: 41800 },
-  { id: 'coal-south', x: 12, y: 11, resource: 'coal', amount: 26700 },
-  { id: 'oil-east', x: 11, y: 6, resource: 'crudeOil', amount: 78000 }
-  ,{ id: 'oil-north', x: 13, y: 2, resource: 'crudeOil', amount: 43200 }
-  ,{ id: 'oil-west', x: -4, y: 10, resource: 'crudeOil', amount: 30100 }
+  { id: 'silicon-north', x: 20, y: -19, resource: 'silicon', amount: 33400 },
+  { id: 'silicon-south', x: 30, y: 3, resource: 'silicon', amount: 21600 },
+  { id: 'iron-east', x: 17, y: 14, resource: 'iron', amount: 91600 },
+  { id: 'iron-west', x: -28, y: -10, resource: 'iron', amount: 74600 },
+  { id: 'iron-south', x: 4, y: 21, resource: 'iron', amount: 52800 },
+  { id: 'ice-south', x: -23, y: 20, resource: 'ice', amount: 46200 },
+  { id: 'ice-north', x: 16, y: -20, resource: 'ice', amount: 29800 },
+  { id: 'water-west', x: -25, y: 21, resource: 'water', amount: 100000 },
+  { id: 'water-east', x: 31, y: 18, resource: 'water', amount: 82000 },
+  { id: 'coal-north-east', x: 22, y: -9, resource: 'coal', amount: 53600 },
+  { id: 'coal-west', x: -30, y: -18, resource: 'coal', amount: 41800 },
+  { id: 'coal-south', x: 22, y: 22, resource: 'coal', amount: 26700 },
+  { id: 'oil-east', x: 11, y: 6, resource: 'crudeOil', amount: 78000 },
+  { id: 'oil-north', x: -5, y: 20, resource: 'crudeOil', amount: 43200 },
+  { id: 'oil-west', x: -17, y: -19, resource: 'crudeOil', amount: 30100 },
+  { id: 'gas-north', x: -2, y: -22, resource: 'naturalGas', amount: 68000 },
+  { id: 'gas-east', x: 27, y: 7, resource: 'naturalGas', amount: 54000 },
+  { id: 'gas-west', x: -22, y: -18, resource: 'naturalGas', amount: 47000 },
+  { id: 'copper-rim-east', x: 25, y: -2, resource: 'copper', amount: 44600 },
+  { id: 'copper-rim-west', x: -20, y: -5, resource: 'copper', amount: 38400 },
+  { id: 'copper-rim-south', x: 2, y: -20, resource: 'copper', amount: 31200 },
+  { id: 'iron-rim-east', x: 32, y: -2, resource: 'iron', amount: 60400 },
+  { id: 'iron-rim-west', x: -22, y: 5, resource: 'iron', amount: 45600 },
+  { id: 'silicon-rim-west', x: -33, y: 0, resource: 'silicon', amount: 27600 },
+  { id: 'silicon-rim-south', x: -18, y: 20, resource: 'silicon', amount: 24800 },
+  { id: 'coal-rim-east', x: 34, y: 22, resource: 'coal', amount: 38200 },
+  { id: 'coal-rim-south', x: -2, y: 22, resource: 'coal', amount: 33400 },
+  { id: 'ice-rim-west', x: -31, y: 21, resource: 'ice', amount: 28600 },
+  { id: 'water-rim-north', x: -9, y: -18, resource: 'water', amount: 72000 },
+  { id: 'water-rim-east', x: 33, y: 2, resource: 'water', amount: 69000 },
+  { id: 'oil-rim-east', x: 18, y: -18, resource: 'crudeOil', amount: 52200 }
 ];
 const initialNodeState = nodes.map(node => ({ ...node }));
 
@@ -289,7 +337,7 @@ function makeBuilding(type, x, y, rotation = 0) {
     researchMode: type === 'researchLab' ? 'auto' : undefined,
     manualResearchMode: false,
     gridEnabled: isPowerTowerType(type) ? true : undefined,
-    baseHub: type === 'storage' ? false : undefined,
+    baseHub: ['storage', 'solidStorage'].includes(type) ? false : undefined,
     sorterRules: type === 'sorter' ? {} : undefined,
     routeCursor: type === 'sorter' ? 0 : undefined,
     sorterMode: type === 'sorter' ? 'input' : undefined
@@ -298,7 +346,16 @@ function makeBuilding(type, x, y, rotation = 0) {
 
 function isStorageType(typeOrBuilding) {
   const type = typeof typeOrBuilding === 'string' ? typeOrBuilding : typeOrBuilding?.type;
-  return type === 'storage' || type === 'logisticsStation';
+  return ['storage', 'solidStorage', 'liquidStorage', 'gasStorage', 'logisticsStation'].includes(type);
+}
+
+function storageFormOf(typeOrBuilding) {
+  const type = typeof typeOrBuilding === 'string' ? typeOrBuilding : typeOrBuilding?.type;
+  return buildings[type]?.storageForm || (type === 'logisticsStation' ? 'solid' : null);
+}
+
+function resourceForm(resource) {
+  return resources[resource]?.form || 'solid';
 }
 
 function isPowerTowerType(typeOrBuilding) {
@@ -308,8 +365,14 @@ function isPowerTowerType(typeOrBuilding) {
 
 function storageCapacity(building) {
   if (!isStorageType(building)) return 0;
-  if (building.type === 'logisticsStation') return 960;
-  return isTechUnlocked('storage-mk2') ? 480 : 240;
+  const level = clamp(getBuildingLevel(building.type), 1, 5);
+  if (building.type === 'logisticsStation') return 960 + (level - 1) * 240;
+  const capacityByForm = {
+    solid: [240, 480, 720, 1024, 1400],
+    liquid: [160, 320, 520, 760, 1040],
+    gas: [120, 240, 400, 600, 840]
+  };
+  return capacityByForm[storageFormOf(building)]?.[level - 1] || 0;
 }
 
 function storageUsed(building) {
@@ -325,13 +388,15 @@ function storageBuildings() {
 }
 
 function storageAmount(resource) {
-  return storageBuildings().reduce((sum, building) => sum + (building.stock?.[resource] || 0), 0);
+  const form = resourceForm(resource);
+  return storageBuildings().reduce((sum, building) => storageFormOf(building) === form ? sum + (building.stock?.[resource] || 0) : sum, 0);
 }
 
 function takeFromStorage(resource, amount) {
   let remaining = amount;
   storageBuildings().forEach(building => {
     if (remaining <= 0) return;
+    if (storageFormOf(building) !== resourceForm(resource)) return;
     const available = Math.min(remaining, building.stock?.[resource] || 0);
     if (available <= 0) return;
     building.stock[resource] -= available;
@@ -344,6 +409,7 @@ function putInStorage(resource, amount) {
   let remaining = amount;
   storageBuildings().forEach(building => {
     if (remaining <= 0) return;
+    if (storageFormOf(building) !== resourceForm(resource)) return;
     const available = Math.min(remaining, Math.max(0, storageCapacity(building) - storageUsed(building)));
     if (available <= 0) return;
     building.stock[resource] = (building.stock[resource] || 0) + available;
@@ -358,12 +424,14 @@ function normalizeSavedBuildings(savedBuildings) {
       ...building,
       input: { ...(building.input || {}) },
       output: { ...(building.output || {}) },
-      stock: isStorageType(building) ? { ...(building.stock || {}) } : undefined,
+      stock: isStorageType(building)
+        ? Object.fromEntries(Object.entries(building.stock || {}).filter(([resource]) => storageFormOf(building) === resourceForm(resource)))
+        : undefined,
       sorterRules: building.type === 'sorter' ? { ...(building.sorterRules || {}) } : undefined,
       routeCursor: building.type === 'sorter' ? Math.max(0, Number.isInteger(building.routeCursor) ? building.routeCursor : 0) : undefined,
       sorterMode: building.type === 'sorter' ? (building.sorterMode === 'output' ? 'output' : 'input') : undefined,
       gridEnabled: isPowerTowerType(building.type) ? building.gridEnabled !== false : undefined,
-      baseHub: building.type === 'storage' ? building.baseHub === true : undefined
+      baseHub: ['storage', 'solidStorage'].includes(building.type) ? building.baseHub === true : undefined
     };
     Object.keys(normalized.input).forEach(resource => {
       normalized.input[resource] = clamp(normalized.input[resource] || 0, 0, inputCapacity(normalized));
@@ -425,7 +493,7 @@ function repairSavedBuildingFootprints(savedBuildings, savedNodes) {
       ? building
       : nearbyLegalSavedCell(building, repairedBuildings, savedNodes);
     if (repaired.x !== building.x || repaired.y !== building.y) savedPlacementRepairCount += 1;
-    if (repaired.type === 'miner' || repaired.type === 'oilExtractor' || repaired.type === 'waterPump') {
+    if (['miner', 'oilExtractor', 'waterPump', 'gasExtractor'].includes(repaired.type)) {
       const size = buildings[repaired.type].size;
       repaired.nodeId = savedNodes.find(node => node.x >= repaired.x - 1 && node.x < repaired.x + size + 1 && node.y >= repaired.y - 1 && node.y < repaired.y + size + 1)?.id || null;
     }
@@ -1010,7 +1078,7 @@ function isBuildingActive(building) {
   if (isPowerTowerType(building)) return getGridPowerState(building).powered;
   if (building.type === 'wind') return getGridPowerState(building).powered;
   if (building.type === 'thermal') return getGridPowerState(building).powered && (building.input.coal || 0) > 0;
-  if (building.type === 'miner' || building.type === 'oilExtractor' || building.type === 'waterPump') return building.timer > .15 || Object.values(building.output).some(amount => amount > 0);
+  if (['miner', 'oilExtractor', 'waterPump', 'gasExtractor'].includes(building.type)) return building.timer > .15 || Object.values(building.output).some(amount => amount > 0);
   return building.process > .05 || Object.values(building.input).some(amount => amount > 0);
 }
 
@@ -1119,7 +1187,11 @@ function drawBuildingFallback(building, size) {
     ctx.fillStyle = '#123849'; ctx.fillRect(size * .18, size * .58, size * .64, size * .12); ctx.strokeRect(size * .18, size * .58, size * .64, size * .12);
     ctx.beginPath(); ctx.moveTo(size * .28, size * .58); ctx.lineTo(size * .5, size * .2); ctx.lineTo(size * .72, size * .58); ctx.stroke();
     ctx.fillStyle = '#78e1ff'; ctx.beginPath(); ctx.arc(size * .5, size * .22, size * .07, 0, Math.PI * 2); ctx.fill();
-  } else if (building.type === 'storage' || building.type === 'logisticsStation') {
+  } else if (building.type === 'gasExtractor') {
+    ctx.fillStyle = '#203b3c'; ctx.fillRect(size * .18, size * .58, size * .64, size * .12); ctx.strokeRect(size * .18, size * .58, size * .64, size * .12);
+    ctx.beginPath(); ctx.moveTo(size * .3, size * .58); ctx.lineTo(size * .5, size * .18); ctx.lineTo(size * .7, size * .58); ctx.stroke();
+    ctx.strokeStyle = '#b6e7ba'; ctx.beginPath(); ctx.arc(size * .5, size * .3, size * .1, 0, Math.PI * 2); ctx.stroke();
+  } else if (isStorageType(building)) {
     ctx.fillStyle = building.type === 'logisticsStation' ? '#302447' : '#20344e';
     roundedRect(ctx, size * .15, size * .2, size * .7, size * .54, 4); ctx.fill(); ctx.stroke();
     ctx.fillStyle = `${color}99`;
@@ -1302,13 +1374,13 @@ function sorterPlacementPreview() {
 function placeSorterBetween(building, belt, mode) {
   const placement = findSorterPlacement(building, belt, mode);
   if (!placement) { showToast('分拣器需要同时贴近建筑接口和传送带端点', 'warning'); return false; }
-  const meta = buildings.sorter;
-  if (!canAfford(buildCost('sorter'))) { showToast(`分拣器建材不足 · 需要 ${formatCost(meta.cost)}`, 'warning'); return false; }
+  const materialCost = buildingMaterialCost('sorter');
+  if (!canAfford(buildCost('sorter'))) { showToast(`分拣器建材不足 · 需要 ${formatCost(materialCost)}`, 'warning'); return false; }
   const sorter = makeBuilding('sorter', placement.cell.x, placement.cell.y);
   sorter.sorterMode = mode;
   sorter.rotation = mode === 'output' ? 0 : 180;
   const usedKit = consumeBuildKit('sorter');
-  if (!usedKit) spend(meta.cost);
+  if (!usedKit) spend(materialCost);
   sorter.constructionKit = usedKit;
   state.buildings.push(sorter);
   rebuildPowerGrids();
@@ -1535,7 +1607,18 @@ function kitCount(type) {
 }
 
 function buildCost(type) {
-  return kitCount(type) > 0 ? {} : buildings[type]?.cost || {};
+  return kitCount(type) > 0 ? {} : buildingMaterialCost(type);
+}
+
+function buildingMaterialCost(type) {
+  const meta = buildings[type];
+  if (!meta?.cost) return {};
+  const level = clamp(getBuildingLevel(type), 1, 5);
+  const markup = [1, 1.35, 1.8, 2.4, 3.2][level - 1];
+  const cost = Object.fromEntries(Object.entries(meta.cost).map(([resource, amount]) => [resource, Math.ceil(amount * markup)]));
+  if (level >= 3) cost.processor = (cost.processor || 0) + level - 2;
+  if (level >= 5) cost.structureCube = (cost.structureCube || 0) + 1;
+  return cost;
 }
 
 function canUseKit(type) {
@@ -1661,11 +1744,12 @@ function placementCheck(type, cell) {
       node: resourceCollision.node
     };
   }
-  if (!canAfford(buildCost(type))) return { valid: false, reason: `建材不足 · 需要 ${formatCost(meta.cost)}`, reasonCode: 'cost' };
+  if (!canAfford(buildCost(type))) return { valid: false, reason: `建材不足 · 需要 ${formatCost(buildingMaterialCost(type))}`, reasonCode: 'cost' };
   const node = findNodeForBuilding({ type, x: cell.x, y: cell.y });
-  if (type === 'miner' && (!node || ['crudeOil', 'water'].includes(node.resource))) return { valid: false, reason: '采矿机必须覆盖固体矿脉', reasonCode: 'resource' };
+  if (type === 'miner' && (!node || ['crudeOil', 'water', 'naturalGas'].includes(node.resource))) return { valid: false, reason: '采矿机必须覆盖固体矿脉', reasonCode: 'resource' };
   if (type === 'oilExtractor' && node?.resource !== 'crudeOil') return { valid: false, reason: '石油提取机必须覆盖原油渗流区', reasonCode: 'resource' };
   if (type === 'waterPump' && node?.resource !== 'water') return { valid: false, reason: '水泵必须覆盖水源采集区', reasonCode: 'resource' };
+  if (type === 'gasExtractor' && node?.resource !== 'naturalGas') return { valid: false, reason: '天然气压采机必须覆盖气田', reasonCode: 'resource' };
   return { valid: true };
 }
 
@@ -1674,9 +1758,9 @@ function placeBuilding(cell) {
   if (!check.valid) { showToast(check.reason, 'warning'); return; }
   const building = makeBuilding(state.tool, cell.x, cell.y, state.rotation);
   if (state.tool === 'miner') building.nodeId = findNodeForBuilding(building)?.id || null;
-  if (state.tool === 'oilExtractor' || state.tool === 'waterPump') building.nodeId = findNodeForBuilding(building)?.id || null;
+  if (['oilExtractor', 'waterPump', 'gasExtractor'].includes(state.tool)) building.nodeId = findNodeForBuilding(building)?.id || null;
   const usedKit = consumeBuildKit(state.tool);
-  if (!usedKit) spend(buildings[state.tool].cost);
+  if (!usedKit) spend(buildingMaterialCost(state.tool));
   building.constructionKit = usedKit;
   state.buildings.push(building);
   rebuildPowerGrids();
@@ -1731,7 +1815,7 @@ function removeAt(cell) {
   if (building) {
     state.buildings = state.buildings.filter(item => item.id !== building.id);
     if (building.constructionKit) state.kits[building.type] = kitCount(building.type) + 1;
-    else refund(buildings[building.type].cost);
+    else refund(buildingMaterialCost(building.type));
     state.selectedId = null;
     state.selectedBeltId = null;
     rebuildPowerGrids();
@@ -1831,7 +1915,7 @@ function findSorterOutputBelt(sorter, resource) {
 
 function acceptsBuildingResource(building, resource) {
   if (!isBuildingOperational(building)) return false;
-  if (isStorageType(building)) return storageHasSpace(building);
+  if (isStorageType(building)) return storageFormOf(building) === resourceForm(resource) && storageHasSpace(building);
   if (building.type === 'smelter') {
     // One smelter is one recipe line. This prevents a shared line from
     // silently filling with three ores while producing none of them reliably.
@@ -1840,7 +1924,7 @@ function acceptsBuildingResource(building, resource) {
   if (building.type === 'assembler') return ['copperIngot', 'siliconWafer'].includes(resource);
   if (building.type === 'workbench') return ['ironIngot', 'copperIngot', 'siliconWafer'].includes(resource);
   if (building.type === 'thermal') return resource === 'coal';
-  if (building.type === 'waterPump') return false;
+  if (['waterPump', 'oilExtractor', 'gasExtractor'].includes(building.type)) return false;
   if (building.type === 'researchLab') {
     const cube = labProductionCube(building);
     return Object.prototype.hasOwnProperty.call(cubeRecipes[cube]?.inputs || {}, resource);
@@ -1865,7 +1949,7 @@ function inputCapacity(building) {
 }
 
 function outputCapacity(building) {
-  return building?.type === 'miner' || building?.type === 'oilExtractor' ? 5 : 6;
+  return ['miner', 'oilExtractor', 'waterPump', 'gasExtractor'].includes(building?.type) ? 5 : 6;
 }
 
 function deliver(building, resource) {
@@ -1967,10 +2051,10 @@ function simulateSorters(dt) {
       const entry = Object.entries(sorter.input || {}).find(([resource, amount]) => amount > 0 && acceptsBuildingResource(target, resource));
       if (!entry) return;
       sorter.process = (sorter.process || 0) + dt * powerState.efficiency;
-      if (sorter.process < .22) return;
+      if (sorter.process < getSorterCycleTime(sorter)) return;
       const [resource] = entry;
       if (isStorageType(target)) {
-        if (!storageHasSpace(target)) return;
+        if (storageFormOf(target) !== resourceForm(resource) || !storageHasSpace(target)) return;
         target.stock[resource] = (target.stock[resource] || 0) + 1;
       } else {
         if (!acceptsBuildingResource(target, resource) || (target.input[resource] || 0) >= inputCapacity(target)) return;
@@ -2004,31 +2088,38 @@ function consumeRecipeInputs(input, recipe) {
 }
 
 function getBeltTravelFactor() {
-  const techFactor = isTechUnlocked('belt-mk2') ? .28 : .4;
+  const level = clamp(getBuildingLevel('belt'), 1, 5);
+  const techFactor = [.4, .28, .21, .16, .12][level - 1];
   return activeCareer().effect === 'beltSpeed' ? techFactor * .75 : techFactor;
 }
 
 function getMiningTime(building) {
-  const base = building?.type === 'oilExtractor' ? 1.2 : .9;
-  if (building?.type === 'oilExtractor' && isTechUnlocked('oil-extractor-mk2')) return base * .65;
-  if (building?.type === 'miner' && isTechUnlocked('mining-mk2')) return base * .65;
-  return base;
+  const base = ['oilExtractor', 'gasExtractor'].includes(building?.type) ? 1.2 : .9;
+  const level = clamp(getBuildingLevel(building?.type), 1, 5);
+  return base * Math.pow(.86, level - 1);
 }
 
 function getSmeltingTime() {
-  return isTechUnlocked('automated-smelting') ? 1.05 : 1.4;
+  const base = isTechUnlocked('automated-smelting') ? 1.05 : 1.4;
+  return base * Math.pow(.86, clamp(getBuildingLevel('smelter'), 1, 5) - 1);
 }
 
 function getAssemblyTime(building) {
   const base = building.type === 'workbench' ? 2.8 : 2.2;
   const workbenchUpgrade = building.type === 'workbench' && isTechUnlocked('workbench-tech') ? .79 : 1;
   const advancedUpgrade = isTechUnlocked('advanced-assembly') ? .7 : 1;
-  return base * workbenchUpgrade * advancedUpgrade;
+  const levelFactor = Math.pow(.86, clamp(getBuildingLevel(building.type), 1, 5) - 1);
+  return base * workbenchUpgrade * advancedUpgrade * levelFactor;
 }
 
 function getResearchProductionTime(building, cube) {
   const base = cubeRecipes[cube]?.time || 4.2;
-  return isTechUnlocked('matrix-lab') ? base * .8 : base;
+  return (isTechUnlocked('matrix-lab') ? base * .8 : base) * Math.pow(.9, clamp(getBuildingLevel('researchLab'), 1, 5) - 1);
+}
+
+function getSorterCycleTime(sorter) {
+  const level = clamp(getBuildingLevel('sorter'), 1, 5);
+  return .22 * [1, .78, .62, .5, .4][level - 1];
 }
 
 const LOCAL_POWER_LINK_RANGE = 3.7;
@@ -2175,7 +2266,10 @@ function buildingUpgradeTechs(type) {
 }
 
 function getBuildingLevel(type) {
-  return 1 + buildingUpgradeTechs(type).filter(tech => isTechUnlocked(tech.id)).length;
+  const researched = buildingUpgradeTechs(type).filter(tech => isTechUnlocked(tech.id));
+  const explicitTier = researched.map(tech => tech.upgradeTier || 0).filter(Boolean);
+  if (explicitTier.length) return Math.min(5, Math.max(1, ...explicitTier));
+  return Math.min(5, 1 + researched.length);
 }
 
 function getBuildingUpgradeState(type) {
@@ -2209,13 +2303,15 @@ function simulateBuildings(dt) {
     const powerState = getGridPowerState(building);
     const efficiency = powerState.efficiency;
     if (isPowerBuilding(building) && !powerState.powered && buildings[building.type]?.power > 0) return;
-    if (building.type === 'miner' || building.type === 'oilExtractor' || building.type === 'waterPump') {
+    if (['miner', 'oilExtractor', 'waterPump', 'gasExtractor'].includes(building.type)) {
       const node = state.nodes.find(item => item.id === building.nodeId);
       const correctResource = building.type === 'oilExtractor'
         ? node?.resource === 'crudeOil'
         : building.type === 'waterPump'
           ? node?.resource === 'water'
-          : node?.resource && !['crudeOil', 'water'].includes(node.resource);
+          : building.type === 'gasExtractor'
+            ? node?.resource === 'naturalGas'
+            : node?.resource && resources[node.resource]?.form === 'solid';
       if (!node || !correctResource || node.amount <= 0 || !powerState.powered) return;
       building.timer += dt * efficiency;
       const extractionTime = getMiningTime(building);
@@ -3007,13 +3103,14 @@ function updateObjective() {
 }
 
 function buildingRecipeText(building) {
-  if (isStorageType(building)) return `${building.type === 'logisticsStation' ? '星际货物中转' : '物流仓储'} · ${storageUsed(building)}/${storageCapacity(building)}`;
+  if (isStorageType(building)) return `${building.type === 'logisticsStation' ? '星际货物中转' : `${storageFormOf(building) === 'solid' ? '固体' : storageFormOf(building) === 'liquid' ? '液体' : '气体'}仓储`} · ${storageUsed(building)}/${storageCapacity(building)}`;
   if (building.type === 'miner') {
     const node = state.nodes.find(item => item.id === building.nodeId);
     return node ? `${resources[node.resource].label}矿脉 → ${resources[node.resource].label}` : '矿脉 → 原矿';
   }
   if (building.type === 'oilExtractor') return '原油渗流 → 原油';
   if (building.type === 'waterPump') return '水源采集区 → 水';
+  if (building.type === 'gasExtractor') return '天然气田 → 天然气';
   if (building.type === 'smelter') return '原矿 → 金属锭 / 硅片';
   if (building.type === 'assembler') return '铜锭 + 硅片 → 芯片';
   if (building.type === 'workbench') return '铁锭 + 铜锭 → 芯片';
@@ -3049,6 +3146,11 @@ function buildingStatus(building) {
     const node = state.nodes.find(item => item.id === building.nodeId);
     return node?.resource === 'water' && node.amount > 0 ? '采水中' : '未接入水源';
   }
+  if (building.type === 'oilExtractor' || building.type === 'gasExtractor') {
+    const node = state.nodes.find(item => item.id === building.nodeId);
+    const expected = building.type === 'oilExtractor' ? 'crudeOil' : 'naturalGas';
+    return node?.resource === expected && node.amount > 0 ? '采集流体' : '未接入资源田';
+  }
   if (building.type === 'sorter') {
     const target = sorterAttachedBuilding(building);
     if (!target) return '未连接建筑';
@@ -3060,7 +3162,7 @@ function buildingStatus(building) {
     if (storageUsed(building) >= storageCapacity(building)) return '仓储已满';
     return storageUsed(building) ? '仓储在线' : '等待入库';
   }
-  if (building.type === 'miner' || building.type === 'oilExtractor') {
+  if (['miner', 'oilExtractor', 'waterPump', 'gasExtractor'].includes(building.type)) {
     const node = state.nodes.find(item => item.id === building.nodeId);
     if (!node) return '未接入矿脉';
     if (node.amount <= 0) return '矿脉耗尽';
@@ -3081,7 +3183,7 @@ function buildingProgress(building) {
   }
   if (building.type === 'smelter') return clamp(building.process / getSmeltingTime(), 0, 1);
   if (building.type === 'assembler' || building.type === 'workbench') return clamp(building.process / getAssemblyTime(building), 0, 1);
-  if (building.type === 'sorter') return clamp(building.process / .22, 0, 1);
+  if (building.type === 'sorter') return clamp(building.process / getSorterCycleTime(building), 0, 1);
   if (isStorageType(building)) return clamp(storageUsed(building) / Math.max(1, storageCapacity(building)), 0, 1);
   if (building.type === 'researchLab') {
     const cube = labProductionCube(building);
@@ -3425,7 +3527,7 @@ function renderCareerPanel() {
     const selected = career.id === pending;
     const current = career.id === state.career;
     return `<button type="button" class="career-card${selected ? ' selected' : ''}${current ? ' current' : ''}" data-career="${career.id}" ${state.careerChosen && !current ? 'disabled' : ''} style="--career-accent:${career.accent}">
-      <span class="career-card-portrait"><img src="output/imagegen/${career.image}" alt="" /></span>
+      <span class="career-card-portrait"><img src="godot_game/assets/generated/${career.image}" alt="" /></span>
       <span class="career-card-copy"><strong>${career.label}</strong><small>${career.summary}</small><b>${career.bonus}</b><em>${career.detail}</em></span>
       <span class="career-card-state">${current ? '当前职业' : selected ? '待确认' : '选择'}</span>
     </button>`;
@@ -3532,13 +3634,14 @@ function updateHUD() {
   const minutes = Math.floor(state.time / 60) % 60;
   query('#game-clock').textContent = `DAY 001 · ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
   query('#career-label').textContent = careerLabel();
-  query('#career-button img').src = `output/imagegen/${state.career ? activeCareer().image : careerCatalog.logistics.image}`;
+  query('#career-button img').src = `godot_game/assets/generated/${state.career ? activeCareer().image : careerCatalog.logistics.image}`;
   query('#count-iron').textContent = formatNumber((state.inventory.iron || 0) + storageAmount('iron'));
   query('#count-copper').textContent = formatNumber((state.inventory.copper || 0) + storageAmount('copper'));
   query('#count-silicon').textContent = formatNumber((state.inventory.silicon || 0) + storageAmount('silicon'));
   query('#count-coal').textContent = formatNumber((state.inventory.coal || 0) + storageAmount('coal'));
   query('#count-crudeOil').textContent = formatNumber((state.inventory.crudeOil || 0) + storageAmount('crudeOil'));
   query('#count-water').textContent = formatNumber((state.inventory.water || 0) + storageAmount('water'));
+  query('#count-naturalGas').textContent = formatNumber((state.inventory.naturalGas || 0) + storageAmount('naturalGas'));
   query('#count-processor').textContent = formatNumber((state.inventory.processor || 0) + storageAmount('processor'));
   query('#count-titanium').textContent = formatNumber((state.inventory.titanium || 0) + storageAmount('titanium'));
   const totalLoadRatio = state.powerGeneration > POWER_EPSILON ? state.powerLoad / state.powerGeneration : state.powerLoad > 0 ? Number.POSITIVE_INFINITY : 0;
@@ -3592,8 +3695,8 @@ function updateHUD() {
     if (cost && meta) cost.textContent = locked
       ? `需 ${techById[techLock]?.label || '科技'}`
       : kitCount(button.dataset.tool) > 0
-        ? `套件 ${kitCount(button.dataset.tool)} · ${formatCost(meta.cost)}`
-        : formatCost(meta.cost);
+        ? `套件 ${kitCount(button.dataset.tool)} · 可直接放置`
+        : formatCost(buildingMaterialCost(button.dataset.tool));
   });
   query('#map-button-state').textContent = state.interstellar.route ? '航线中' : isInterstellarUnlocked() ? '已接入' : '未接入';
   const selected = state.buildings.find(building => building.id === state.selectedId);
@@ -3625,8 +3728,10 @@ function updateHUD() {
     query('#selection-output').textContent = `${beltItems.length} 件运输中`;
     query('#selection-recipe').textContent = `方向 ${direction} · 起点 ${selectedBelt.x},${selectedBelt.y}`;
     query('#selection-tech').textContent = '基础物流授权 · 已接入';
-    query('#selection-license').textContent = `${isTechUnlocked('belt-mk2') ? 'MK-2' : 'MK-1'} · ${getBeltTravelFactor().toFixed(2)} 格/秒`;
-    query('#selection-upgrade').textContent = isTechUnlocked('belt-mk2') ? '高速传送 · 已研究' : '下一项「高速传送」';
+    const beltLevel = getBuildingLevel('belt');
+    query('#selection-license').textContent = `MK-${beltLevel} · ${getBeltTravelFactor().toFixed(2)} 格/秒`;
+    const beltUpgrade = buildingUpgradeTechs('belt').find(tech => !isTechUnlocked(tech.id));
+    query('#selection-upgrade').textContent = beltUpgrade ? `下一项「${beltUpgrade.label}」` : '已达到 MK-V';
     query('#selection-progress-fill').style.width = `${clamp(beltItems.length / Math.max(1, selectedBelt.length), 0, 1) * 100}%`;
     query('#selection-power-label').textContent = '物流';
     query('#selection-power').textContent = '无独立耗电';
@@ -3645,10 +3750,10 @@ function updateHUD() {
     const status = buildingStatus(selected);
     query('#selection-state').textContent = status;
     query('#selection-state').style.color = ['科技锁定', '电力不足', '电网瘫痪', '电网高负载', '输出堵塞', '缺少输入', '缺少矩阵组件', '缺煤', '未接入矿脉', '未接入水源', '未接入电网'].includes(status) ? '#ff9b3d' : '#62d69a';
-    query('#selection-output').textContent = output ? `${formatNumber(output[1])} 单位缓存` : ['miner', 'oilExtractor', 'waterPump'].includes(selected.type) ? '采掘中 · 等待输出' : '等待产出';
+    query('#selection-output').textContent = output ? `${formatNumber(output[1])} 单位缓存` : ['miner', 'oilExtractor', 'waterPump', 'gasExtractor'].includes(selected.type) ? '采掘中 · 等待输出' : '等待产出';
     query('#selection-recipe').textContent = buildingRecipeText(selected);
     query('#selection-tech').textContent = isBuildingUnlocked(selected.type) ? `${buildingTechName(selected.type)} · 已授权` : `需完成「${buildingTechName(selected.type)}」`;
-    const selectionLevel = isBuildingUnlocked(selected.type) ? `MK-${Math.min(getBuildingLevel(selected.type), 3)}` : '锁定';
+    const selectionLevel = isBuildingUnlocked(selected.type) ? `MK-${Math.min(getBuildingLevel(selected.type), 5)}` : '锁定';
     query('#selection-license').textContent = `${selectionLevel} · ${isBuildingUnlocked(selected.type) ? '可运行' : '等待科技'}`;
     const upgradeState = getBuildingUpgradeState(selected.type);
     const researchedUpgrades = upgradeState.researched.map(tech => tech.label).join('、');
@@ -3990,6 +4095,10 @@ function runQaPlaythrough() {
   state.interstellar = makeInterstellarState({ selectedPlanet: 'forge', cargo: 'processor' });
   state.stellarProject = makeStellarProject();
   check(!state.buildings.some(building => building.type === 'hub'), '旧能源核心仍然存在于运行时场景');
+  check(WORLD_BOUNDS.maxX - WORLD_BOUNDS.minX >= 72 && WORLD_BOUNDS.maxY - WORLD_BOUNDS.minY >= 48, '单星球地图边界没有扩大到行星尺度');
+  check(state.nodes.length >= 30 && state.nodes.some(node => Math.abs(node.x) > 20 && Math.abs(node.y) > 14), '资源节点仍然集中在着陆区附近');
+  check(resources.crudeOil.form === 'liquid' && resources.water.form === 'liquid' && resources.naturalGas.form === 'gas', '流体资源形态元数据缺失');
+  check(!Object.prototype.hasOwnProperty.call(startingStorageStock, 'crudeOil') && !Object.prototype.hasOwnProperty.call(startingStorageStock, 'water') && !Object.prototype.hasOwnProperty.call(startingStorageStock, 'naturalGas'), '初始固体仓储仍混入液体或气体库存');
   check(storageCapacity(storage) === 240, '基础物流仓储容量错误');
   check(isBuildingUnlocked('sorter'), '基础工业授权没有解锁基础分拣器');
   check(terrainAt({ x: 13, y: -7 }).kind === 'rock' && terrainAt({ x: -14, y: 8 }).kind === 'water', '固定地形瓦片没有生成');
@@ -4065,6 +4174,14 @@ function runQaPlaythrough() {
   const storageCapacityBefore = storageCapacity(storage);
   researchQaTech('storage-mk2');
   check(storageCapacity(storage) > storageCapacityBefore && storageCapacity(storage) === 480, '仓储扩容没有改变真实容量');
+  const liquidStorage = makeBuilding('liquidStorage', 18, 8);
+  const gasStorage = makeBuilding('gasStorage', 22, 8);
+  researchQaTech('fluid-storage');
+  state.buildings.push(liquidStorage);
+  check(storageFormOf(storage) === 'solid' && storageFormOf(liquidStorage) === 'liquid' && storageFormOf(gasStorage) === 'gas', '三类仓储没有绑定独立物态');
+  check(!acceptsBuildingResource(storage, 'water') && acceptsBuildingResource(liquidStorage, 'water') && !acceptsBuildingResource(liquidStorage, 'iron'), '液体仓储错误接受了固体或拒绝了液体');
+  check(putInStorage('water', 3) === 3 && storageAmount('water') === 3, '液体资源没有进入独立液体仓储');
+  check(putInStorage('water', 1) === 0 || storageAmount('water') === 4, '仓储形态校验出现异常');
   researchQaTech('belt-mk2');
   check(getBeltTravelFactor() < beltSpeedBefore, '高速传送未改变运输速度');
   const miningTimeBefore = getMiningTime(miner);
@@ -4074,6 +4191,13 @@ function runQaPlaythrough() {
   const oilTimeBefore = getMiningTime(oilExtractor);
   researchQaTech('oil-processing');
   check(isBuildingUnlocked('oilExtractor'), '石油提取机未随石化开采解锁');
+  researchQaTech('gas-extraction');
+  researchQaTech('gas-storage');
+  state.buildings.push(gasStorage);
+  check(!acceptsBuildingResource(storage, 'naturalGas') && acceptsBuildingResource(gasStorage, 'naturalGas') && !acceptsBuildingResource(gasStorage, 'water'), '气体仓储错误接受了其他物态');
+  check(putInStorage('naturalGas', 3) === 3 && storageAmount('naturalGas') === 3, '气体资源没有进入独立气体仓储');
+  check(placementCheck('gasExtractor', { x: -4, y: -22 }).valid, '天然气压采机无法覆盖远端气田');
+  check(!placementCheck('gasExtractor', { x: -2, y: -22 }).valid, '天然气压采机可以压住气田核心格');
   const oilPlacementBelts = state.belts;
   state.belts = [];
   const oilPlacement = placementCheck('oilExtractor', { x: 9, y: 5 });
@@ -4117,6 +4241,11 @@ function runQaPlaythrough() {
   const assemblyTimeBefore = getAssemblyTime(assembler);
   researchQaTech('advanced-assembly');
   check(getAssemblyTime(assembler) < assemblyTimeBefore, '高级组装未升级组装机速度');
+  const logisticsLevelBefore = getBuildingLevel('belt');
+  researchQaTech('logistics-mk3');
+  check(getBuildingLevel('belt') === 3 && getBeltTravelFactor() < beltSpeedBefore, '物流 Mk-III 没有改变传送带等级或速度');
+  researchQaTech('logistics-mk4');
+  check(getBuildingLevel('belt') === 4, '物流 Mk-IV 没有升级传送带');
   const researchQaLab = makeBuilding('researchLab', 0, 0);
   const researchTimeBefore = getResearchProductionTime(researchQaLab, 'electromagneticCube');
   researchQaTech('matrix-lab');
@@ -4133,6 +4262,14 @@ function runQaPlaythrough() {
   simulateInterstellar(13);
   check(state.interstellar.completedTrips === 1 && storageAmount('titanium') === 8, '异星钛资源未回收到物流仓储');
   researchQaTech('stellar-network');
+  researchQaTech('logistics-mk5');
+  check(getBuildingLevel('belt') === 5 && storageCapacity(storage) === 1400, '物流 Mk-V 没有达到五级速度与容量');
+  researchQaTech('industrial-mk3');
+  researchQaTech('industrial-mk4');
+  researchQaTech('industrial-mk5');
+  check(getBuildingLevel('miner') === 5 && getMiningTime(miner) < .55, '工业设备没有完成五级升级链');
+  state.buildings = state.buildings.filter(building => building !== liquidStorage && building !== gasStorage);
+  rebuildPowerGrids();
   researchQaTech('dyson-frame');
   storage.stock = { structureCube: 80, titanium: 40, processor: 20 };
   for (let index = 0; index < 20; index += 1) contributeStellarProject();

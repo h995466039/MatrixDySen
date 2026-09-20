@@ -6,6 +6,9 @@ node_modules/
 dist/
 build/
 *.log
+image_key.txt
+.workbuddy/
+godot_game/.godot/
 
 # 系统与编辑器
 .DS_Store

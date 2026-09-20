@@ -184,6 +184,7 @@ button:focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; }
 .water-pump-icon { color: #5cc8ed; border-color: rgba(92, 200, 237, .7); font-size: 22px; }
 .coal-glyph { border-color: rgba(130, 122, 136, .72); color: #b0a7b8; background: rgba(130, 122, 136, .12); font-size: 14px; }
 .oil-glyph { border-color: rgba(201, 120, 73, .72); color: #df9869; background: rgba(201, 120, 73, .12); font-size: 16px; }
+.gas-glyph { border-color: rgba(182, 231, 186, .72); color: #b6e7ba; background: rgba(182, 231, 186, .12); font-size: 16px; }
 
 .image-tool.asset-fallback img { display: none; }
 .image-tool.asset-fallback::after { content: attr(data-fallback); color: currentColor; font-size: 17px; line-height: 1; }
@@ -239,7 +240,7 @@ button:focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; }
 .star-map-head h2 { margin: 6px 0 5px; color: var(--ink); font-size: 20px; letter-spacing: .08em; }
 .star-map-head p { margin: 0; color: var(--muted); font-size: 10px; }
 .star-map-stage { position: relative; height: 340px; overflow: hidden; margin-top: 14px; border: 1px solid var(--line); background: #06121f; }
-.star-map-art { position: absolute; inset: 0; background: url('output/imagegen/stellar-ring-concept-v01.png') center / cover; opacity: .2; filter: saturate(.8) contrast(1.1); }
+.star-map-art { position: absolute; inset: 0; background: url('godot_game/assets/generated/stellar-ring-concept-v01.png') center / cover; opacity: .2; filter: saturate(.8) contrast(1.1); }
 .star-map-stage::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle at 50% 50%, transparent 0 16%, rgba(4, 13, 22, .12) 44%, rgba(4, 13, 22, .55) 100%); }
 .star-orbit { position: absolute; left: 50%; top: 50%; border: 1px solid rgba(105, 216, 218, .18); border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; }
 .star-orbit-one { width: 28%; height: 42%; }
@@ -527,8 +528,8 @@ button:focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; }
   border-color: rgba(164, 204, 207, .3);
   background: rgba(6, 17, 28, .78);
 }
-.terrain-swatch-plain { background-image: url('output/imagegen/godot-v02-ground-tile.png'); background-size: cover; }
-.terrain-swatch-rock { background-image: url('output/imagegen/godot-v02-ground-tile.png'); background-size: cover; }
+.terrain-swatch-plain { background-image: url('godot_game/assets/generated/godot-v02-ground-tile.png'); background-size: cover; }
+.terrain-swatch-rock { background-image: url('godot_game/assets/generated/godot-v02-ground-tile.png'); background-size: cover; }
 .terrain-swatch-water { background-image: url('godot_game/assets/generated/terrain_water_tile_v01.png'); background-size: cover; }
 .selection-card {
   top: 320px;
