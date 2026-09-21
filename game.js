@@ -3559,11 +3559,14 @@ function getFactoryDiagnostic() {
       ? 'powerTower'
       : isBuildingUnlocked('wind') ? 'wind' : isBuildingUnlocked('thermal') ? 'thermal' : null;
     const powerLabel = powerTool ? buildings[powerTool].label : '风能捕获科技';
+    const powerGapText = state.powerSummary.generation > POWER_EPSILON
+      ? `当前发电 ${state.powerSummary.generation.toFixed(1)} MW，用电 ${state.powerSummary.load.toFixed(1)} MW。`
+      : '当前没有可用发电。';
     const powerText = state.powerSummary.blackoutCount > 0
       ? canDeployStarterTower
         ? `${state.powerSummary.blackoutCount} 个电网已瘫痪。旧产线还没有电力塔，先部署基础电力塔，把设备纳入圆形覆盖范围。`
-        : `${state.powerSummary.blackoutCount} 个电网已瘫痪。先断开过载电塔，恢复一个小范围电网，再逐步重新接入。`
-      : `${state.powerSummary.highLoadCount} 个电网处于高负载，所有用电设施效率减半。建议增设发电设备或拆分电网。`;
+        : `${state.powerSummary.blackoutCount} 个电网已瘫痪。${powerGapText}先断开过载电塔或再部署一台发电设备，恢复一个小范围电网。`
+      : `${state.powerSummary.highLoadCount} 个电网处于高负载，所有用电设施效率减半。${powerGapText}建议增设发电设备或拆分电网。`;
     return {
       kind: 'power', stage: 'power', severity: 'warning', progress: 18,
       title: '稳定电力网络',
