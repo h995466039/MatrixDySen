@@ -27,7 +27,7 @@
       <header class="game-topbar">
         <div class="game-brand"><span class="brand-orbit"><i></i><i></i></span><span><b>星环回声</b><small>行星工厂 / 早期测试版</small></span></div>
         <div class="world-readout"><span>晨星-03</span><strong id="game-clock">DAY 001 · 06:00</strong></div>
-        <div class="top-actions"><button class="career-chip" id="career-button" title="查看职业能力"><img src="godot_game/assets/generated/character-logistics-director-v01.png" alt="" /><span id="career-label">物流主管</span></button><button class="hud-button craft-trigger" id="craft-button" title="打开应急制造"><span class="craft-glyph">⌗</span><span>制造</span><i id="craft-button-state">应急</i></button><button class="hud-button tech-trigger" id="tech-button"><span class="tech-glyph">⌬</span><span>科技</span><i id="tech-button-state">待命</i></button><button class="hud-button map-trigger" id="map-button"><span class="map-glyph">✦</span><span>星图</span><i id="map-button-state">母星</i></button><button class="hud-button speed-button" id="speed-button" title="切换模拟速度"><span>»</span><span id="speed-label">1x</span></button><button class="hud-button" id="pause-button"><span id="pause-glyph">Ⅱ</span><span id="pause-label">暂停</span></button><button class="hud-button" id="reset-button" title="重置本地工厂">↻</button></div>
+        <div class="top-actions"><button class="career-chip" id="career-button" title="查看职业能力"><img src="godot_game/assets/generated/character-logistics-director-v01.png" alt="" /><span id="career-label">物流主管</span></button><button class="hud-button goal-trigger" id="goal-button" title="查看远征目标"><span class="goal-glyph">◎</span><span>目标</span><i id="goal-button-state">当前阶段</i></button><button class="hud-button craft-trigger" id="craft-button" title="打开应急制造"><span class="craft-glyph">⌗</span><span>制造</span><i id="craft-button-state">应急</i></button><button class="hud-button tech-trigger" id="tech-button"><span class="tech-glyph">⌬</span><span>科技</span><i id="tech-button-state">待命</i></button><button class="hud-button map-trigger" id="map-button"><span class="map-glyph">✦</span><span>星图</span><i id="map-button-state">母星</i></button><button class="hud-button speed-button" id="speed-button" title="切换模拟速度"><span>»</span><span id="speed-label">1x</span></button><button class="hud-button" id="pause-button"><span id="pause-glyph">Ⅱ</span><span id="pause-label">暂停</span></button><button class="hud-button" id="reset-button" title="重置本地工厂">↻</button></div>
       </header>
 
       <div class="resource-hud" id="resource-hud">
@@ -44,19 +44,26 @@
       </div>
 
       <aside class="objective-card">
-        <span class="eyebrow">FIRST INDUSTRIAL LOOP</span>
+        <div class="objective-card-head"><div><span class="eyebrow">当前目标</span><span class="objective-stage" id="objective-stage">落地阶段</span></div><button class="objective-detail" id="objective-detail" title="查看目标详情">详情</button></div>
         <strong id="objective-title">让第一条产线跑起来</strong>
-        <p id="objective-text">在铜矿脉旁放置采矿机，再用传送带连接到熔炼炉。</p>
+        <p id="objective-text">先找到铜矿，放下采矿机，再把原矿送进加工端。</p>
         <div class="objective-steps" id="objective-steps"></div>
         <div class="objective-progress"><i id="objective-fill"></i></div>
-        <button class="objective-action" id="objective-action">选择采矿机</button>
+        <div class="objective-footer"><span id="objective-progress-label">0%</span><button class="objective-action" id="objective-action">开始建造</button></div>
       </aside>
 
       <aside class="factory-monitor" id="factory-monitor">
-        <div class="monitor-heading"><span class="signal-pulse"></span><span>FACTORY PULSE</span><b id="monitor-status">待命</b></div>
+        <div class="monitor-heading"><span class="signal-pulse"></span><span>工厂状态</span><b id="monitor-status">待命</b></div>
         <div class="monitor-metrics"><span><small>运行设施</small><b id="monitor-buildings">0</b></span><span><small>运输中</small><b id="monitor-items">0</b></span><span><small>航次</small><b id="monitor-trips">0</b></span></div>
-        <div class="monitor-advice"><span class="monitor-advice-dot"></span><span id="monitor-advice-text">选择设施，在网格中开始建造。</span></div>
-        <button class="monitor-action" id="monitor-advice-action" hidden>执行建议</button>
+        <div class="monitor-advice"><span class="monitor-advice-dot"></span><span id="monitor-advice-text">先完成当前目标。</span></div>
+        <div class="monitor-actions"><button class="monitor-detail" id="monitor-detail-button">详情</button><button class="monitor-action" id="monitor-advice-action" hidden>执行建议</button></div>
+      </aside>
+
+      <aside class="goal-panel" id="goal-panel" hidden>
+        <div class="goal-panel-head"><div><span class="eyebrow">远征目标 / 远景</span><h2>把荒原变成恒星能源工厂</h2><p>先让一个星球运转，再把生产线送往更多星球，最终在恒星轨道完成持续供能。</p></div><button class="panel-close" id="close-goal-panel" title="关闭目标详情">×</button></div>
+        <section class="goal-current"><div class="goal-current-heading"><span id="goal-phase-label">落地阶段</span><strong id="goal-current-title">让第一条产线跑起来</strong></div><p id="goal-current-text">找到铜矿，放下采矿机，把原矿送进加工端。</p><div class="goal-progress"><i id="goal-current-fill"></i></div><div class="goal-current-meta"><span id="goal-current-progress">0%</span><button class="goal-current-action" id="goal-current-action">开始建造</button></div></section>
+        <div class="goal-columns"><section class="goal-column"><h3>你要完成什么</h3><ul class="goal-list"><li><span>01</span><div><strong>建起基础循环</strong><p>采集铁、铜、硅等基础资源，连接加工和仓储。</p></div></li><li><span>02</span><div><strong>逐层解锁科技</strong><p>让一级材料变成矩阵、芯片和更高级的制造材料。</p></div></li><li><span>03</span><div><strong>扩张到多个星球</strong><p>用星图派遣货运舱，把异星资源带回主生产线。</p></div></li><li><span>04</span><div><strong>建设戴森球能源网</strong><p>发射有时效的组件到恒星轨道，收集恒星能量并转成电力。</p></div></li></ul></section><section class="goal-column"><h3>成长路线</h3><ol class="goal-roadmap"><li class="is-current"><b>落地</b><small>采矿 · 加工 · 风力供电</small></li><li><b>工业</b><small>物流 · 仓储 · 自动制造</small></li><li><b>科研</b><small>矩阵 · 科技树 · 高级设备</small></li><li><b>远征</b><small>星图 · 货运 · 异星资源</small></li><li><b>恒星工程</b><small>轨道组件 · 时效 · 脱落风险</small></li><li><b>胜利</b><small>稳定收集并储存恒星能源</small></li></ol></section></div>
+        <div class="goal-win"><strong>怎样算赢</strong><p>至少在多个星球建立可运行的生产链，完成戴森球轨道组装，让恒星能源被持续收集并转化为稳定电力。组件会过期脱落，长期稳定运行才是真正的完成。</p></div>
       </aside>
 
       <aside class="career-panel" id="career-panel" hidden>
@@ -66,8 +73,8 @@
       </aside>
 
       <aside class="craft-panel" id="craft-panel" hidden>
-        <div class="craft-panel-head"><div><span class="eyebrow">FIELD FABRICATION / 00</span><h2>应急制造</h2><p>用随身材料制作基础建造套件，不占用电网。</p></div><button class="panel-close" id="close-craft-panel" title="关闭应急制造">×</button></div>
-        <div class="craft-stock"><span><small>随身材料</small><b id="craft-material-summary">铁 0 · 铜 0 · 硅 0</b></span><span><small>待放置套件</small><b id="craft-kit-summary">暂无待放置套件</b></span></div>
+        <div class="craft-panel-head"><div><span class="eyebrow">FIELD FABRICATION / 00</span><h2>应急制造</h2><p>用随身材料制作建筑和物流组件，不占用电网。</p></div><button class="panel-close" id="close-craft-panel" title="关闭应急制造">×</button></div>
+        <div class="craft-stock"><span><small>随身材料</small><b id="craft-material-summary">铁 0 · 铜 0 · 硅 0</b></span><span><small>建筑库存</small><b id="craft-kit-summary">暂无可用建筑</b></span></div>
         <div class="craft-recipes" id="craft-recipes"></div>
       </aside>
 
@@ -110,35 +117,39 @@
 
       <div class="build-mode-badge" id="build-mode-badge"><span class="mode-dot"></span><span id="tool-label">检视模式</span><small id="cursor-readout">点击建筑查看详情 · ESC 取消当前操作</small></div>
 
-      <nav class="build-toolbar" id="build-toolbar" aria-label="建造目录">
-        <span class="toolbar-section-label">现场</span>
-        <button class="tool-button mode-tool selected" data-tool="inspect" title="取消建造选择并检视设施"><span class="tool-key">0</span><span class="tool-icon">⌖</span><span><b>检视</b><small>取消选择</small></span></button>
-        <span class="toolbar-divider"></span>
-        <button class="tool-button" data-tool="miner"><span class="tool-key">1</span><span class="tool-icon image-tool" data-fallback="⌁"><img src="godot_game/assets/generated/building-mining-drill-v01.png" alt="" /></span><span><b>采矿机</b><small>铁 8</small></span></button>
-        <button class="tool-button" data-tool="smelter"><span class="tool-key">2</span><span class="tool-icon smelter-icon image-tool" data-fallback="◈"><img src="godot_game/assets/generated/building-smelter-v01.png" alt="" /></span><span><b>熔炼炉</b><small>铁 10</small></span></button>
-        <button class="tool-button" data-tool="waterPump" title="必须覆盖水源采集区"><span class="tool-key">6</span><span class="tool-icon image-tool water-pump-icon" data-fallback="≈"><img src="godot_game/assets/generated/building_water-pump_v01.png" alt="" /></span><span><b>水泵</b><small>铁 10 · 铜 2</small></span></button>
-        <button class="tool-button" data-tool="assembler" title="需要自动冶炼"><span class="tool-key">3</span><span class="tool-icon assembler-icon image-tool" data-fallback="⌬"><img src="godot_game/assets/generated/building-assembler-v01.png" alt="" /></span><span><b>组装机</b><small>铁 2</small></span></button>
-        <button class="tool-button" data-tool="belt"><span class="tool-key">4</span><span class="tool-icon belt-icon image-tool" data-fallback="╱╲"><img src="godot_game/assets/generated/building-conveyor-module-v01.png" alt="" /></span><span><b>传送带</b><small>铁 / 格</small></span></button>
-        <span class="toolbar-divider"></span>
-        <button class="tool-button demolish-button" data-tool="demolish"><span class="tool-key">5</span><span class="tool-icon">⌫</span><span><b>拆除</b><small>回收</small></span></button>
-        <span class="toolbar-divider"></span>
-        <span class="toolbar-section-label">物流</span>
-        <button class="tool-button advanced-tool" data-tool="sorter" data-tech-lock="foundation" title="基础工业授权后可用；智能分拣升级多出口"><span class="tool-icon image-tool" data-fallback="⇥"><img src="godot_game/assets/generated/building_sorter_north.png" alt="" /></span><span><b>分拣器</b><small>铁 4 · 铜 2</small></span></button>
-        <button class="tool-button advanced-tool" data-tool="solidStorage" title="只接受固体资源"><span class="tool-icon image-tool" data-fallback="▣"><img src="godot_game/assets/generated/building_solid-storage_v01.svg" alt="" /></span><span><b>固体仓储</b><small>铁 16 · 铜 4</small></span></button>
-        <button class="tool-button advanced-tool" data-tool="liquidStorage" data-tech-lock="fluid-storage" title="只接受水与原油"><span class="tool-icon image-tool" data-fallback="≈"><img src="godot_game/assets/generated/building_liquid-storage_v01.svg" alt="" /></span><span><b>液体仓储</b><small>需要流体罐区</small></span></button>
-        <button class="tool-button advanced-tool" data-tool="gasStorage" data-tech-lock="gas-storage" title="只接受天然气"><span class="tool-icon image-tool" data-fallback="∿"><img src="godot_game/assets/generated/building_gas-storage_v01.svg" alt="" /></span><span><b>气体仓储</b><small>需要高压气库</small></span></button>
-        <button class="tool-button advanced-tool" data-tool="logisticsStation" data-tech-lock="interstellar-logistics" title="需要星际物流"><span class="tool-icon">◎</span><span><b>行星物流站</b><small>星际科技解锁</small></span></button>
-        <button class="tool-button advanced-tool" data-tool="workbench" data-tech-lock="workbench-tech" title="需要精密工作台"><span class="tool-icon image-tool" data-fallback="⌗"><img src="godot_game/assets/generated/building_workbench_north.png" alt="" /></span><span><b>工作台</b><small>科技解锁</small></span></button>
-        <span class="toolbar-divider"></span>
-        <span class="toolbar-section-label">能源</span>
-        <button class="tool-button advanced-tool" data-tool="wind" title="基础工业授权后可用；风能捕获可升级输出"><span class="tool-icon image-tool" data-fallback="△"><img src="godot_game/assets/generated/building_wind-generator_north.png" alt="" /></span><span><b>风力发电机</b><small>套件库存</small></span></button>
-        <button class="tool-button advanced-tool" data-tool="thermal" data-tech-lock="thermal-power" title="需要热能转化"><span class="tool-icon image-tool" data-fallback="♨"><img src="godot_game/assets/generated/building_thermal-generator_north.png" alt="" /></span><span><b>火力发电机</b><small>科技解锁</small></span></button>
-        <button class="tool-button advanced-tool" data-tool="powerTower" title="以电塔为圆心形成圆形供电覆盖"><span class="tool-key">7</span><span class="tool-icon image-tool power-tower-icon" data-fallback="⌁"><img src="godot_game/assets/generated/building_power-tower_v01.svg" alt="" /></span><span><b>电力塔</b><small>铁 6 · 铜 2</small></span></button>
-        <button class="tool-button advanced-tool" data-tool="longPowerTower" data-tech-lock="power-transmission" title="需要远距输电"><span class="tool-key">8</span><span class="tool-icon image-tool long-power-tower-icon" data-fallback="⌁"><img src="godot_game/assets/generated/building_long-power-tower_v01.svg" alt="" /></span><span><b>远距离电力塔</b><small>科技解锁</small></span></button>
-        <button class="tool-button advanced-tool" data-tool="ultraPowerTower" data-tech-lock="advanced-power-grid" title="需要超远距骨干网"><span class="tool-key">9</span><span class="tool-icon image-tool ultra-power-tower-icon" data-fallback="⌁"><img src="godot_game/assets/generated/building_ultra-power-tower_v01.svg" alt="" /></span><span><b>超远距离电力塔</b><small>科技解锁</small></span></button>
-        <button class="tool-button advanced-tool" data-tool="oilExtractor" data-tech-lock="oil-processing" title="必须覆盖原油渗流区"><span class="tool-icon image-tool" data-fallback="◎"><img src="godot_game/assets/generated/building_oil-extractor_north.png" alt="" /></span><span><b>石油提取机</b><small>必须覆盖原油</small></span></button>
-        <button class="tool-button advanced-tool" data-tool="gasExtractor" data-tech-lock="gas-extraction" title="必须覆盖天然气田"><span class="tool-icon image-tool" data-fallback="∿"><img src="godot_game/assets/generated/building_gas-extractor_v01.svg" alt="" /></span><span><b>天然气压采机</b><small>需要气体压采</small></span></button>
-        <button class="tool-button advanced-tool" data-tool="researchLab"><span class="tool-icon image-tool" data-fallback="⚗"><img src="godot_game/assets/generated/building_research-lab_north.png" alt="" /></span><span><b>科研站</b><small>铁 20 · 芯片 4</small></span></button>
+      <nav class="build-toolbar build-dock" id="build-toolbar" aria-label="建造目录">
+        <div class="dock-category-bar" role="tablist" aria-label="建筑分类">
+          <button class="dock-category-button" data-dock-category="tools" role="tab" aria-label="工具"><span>⌖</span><b>工具</b></button>
+          <button class="dock-category-button active" data-dock-category="extract" role="tab" aria-label="采集"><span>⌁</span><b>采集</b></button>
+          <button class="dock-category-button" data-dock-category="logistics" role="tab" aria-label="物流"><span>⇄</span><b>物流</b></button>
+          <button class="dock-category-button" data-dock-category="manufacture" role="tab" aria-label="制造"><span>◇</span><b>制造</b></button>
+          <button class="dock-category-button" data-dock-category="research" role="tab" aria-label="科研"><span>⌬</span><b>科研</b></button>
+          <button class="dock-category-button" data-dock-category="power" role="tab" aria-label="电力"><span>⚡</span><b>电力</b></button>
+          <button class="dock-category-button" data-dock-category="storage" role="tab" aria-label="仓储"><span>▣</span><b>仓储</b></button>
+        </div>
+        <div class="dock-tool-row" id="dock-tool-row" role="tabpanel">
+          <button class="tool-button mode-tool selected" data-tool="inspect" data-dock-category="tools" title="取消建造选择并检视设施"><span class="tool-key">0</span><span class="tool-icon">⌖</span><span><b>检视</b><small>取消选择</small></span></button>
+          <button class="tool-button demolish-button" data-tool="demolish" data-dock-category="tools"><span class="tool-key">5</span><span class="tool-icon">⌫</span><span><b>拆除</b><small>回收返还</small></span></button>
+          <button class="tool-button" data-tool="miner" data-dock-category="extract"><span class="tool-key">1</span><span class="tool-icon image-tool" data-fallback="⌁"><img src="godot_game/assets/generated/building-mining-drill-v01.png" alt="" /></span><span><b>采矿机</b><small>库存</small></span></button>
+          <button class="tool-button" data-tool="waterPump" data-dock-category="extract" title="必须覆盖水源采集区"><span class="tool-key">6</span><span class="tool-icon image-tool water-pump-icon" data-fallback="≈"><img src="godot_game/assets/generated/building_water-pump_v01.png" alt="" /></span><span><b>水泵</b><small>库存</small></span></button>
+          <button class="tool-button advanced-tool" data-tool="oilExtractor" data-dock-category="extract" data-tech-lock="oil-processing" title="必须覆盖原油渗流区"><span class="tool-icon image-tool" data-fallback="◎"><img src="godot_game/assets/generated/building_oil-extractor_north.png" alt="" /></span><span><b>石油提取机</b><small>库存</small></span></button>
+          <button class="tool-button advanced-tool" data-tool="gasExtractor" data-dock-category="extract" data-tech-lock="gas-extraction" title="必须覆盖天然气田"><span class="tool-icon image-tool" data-fallback="∿"><img src="godot_game/assets/generated/building_gas-extractor_v01.svg" alt="" /></span><span><b>天然气压采机</b><small>库存</small></span></button>
+          <button class="tool-button" data-tool="belt" data-dock-category="logistics"><span class="tool-key">4</span><span class="tool-icon belt-icon image-tool" data-fallback="╱╲"><img src="godot_game/assets/generated/building-conveyor-module-v01.png" alt="" /></span><span><b>传送带</b><small>每格 1 铁</small></span></button>
+          <button class="tool-button advanced-tool" data-tool="sorter" data-dock-category="logistics" data-tech-lock="foundation" title="把建筑接口接入传送带物流"><span class="tool-icon image-tool" data-fallback="⇥"><img src="godot_game/assets/generated/building_sorter_north.png" alt="" /></span><span><b>分拣器</b><small>库存</small></span></button>
+          <button class="tool-button advanced-tool" data-tool="logisticsStation" data-dock-category="logistics" data-tech-lock="interstellar-logistics" title="需要星际物流"><span class="tool-icon">◎</span><span><b>行星物流站</b><small>库存</small></span></button>
+          <button class="tool-button" data-tool="smelter" data-dock-category="manufacture"><span class="tool-key">2</span><span class="tool-icon smelter-icon image-tool" data-fallback="◈"><img src="godot_game/assets/generated/building-smelter-v01.png" alt="" /></span><span><b>熔炼炉</b><small>库存</small></span></button>
+          <button class="tool-button" data-tool="assembler" data-dock-category="manufacture" title="需要自动冶炼"><span class="tool-key">3</span><span class="tool-icon assembler-icon image-tool" data-fallback="⌬"><img src="godot_game/assets/generated/building-assembler-v01.png" alt="" /></span><span><b>组装机</b><small>库存</small></span></button>
+          <button class="tool-button advanced-tool" data-tool="workbench" data-dock-category="manufacture" data-tech-lock="workbench-tech" title="需要精密工作台"><span class="tool-icon image-tool" data-fallback="⌗"><img src="godot_game/assets/generated/building_workbench_north.png" alt="" /></span><span><b>工作台</b><small>库存</small></span></button>
+          <button class="tool-button" data-tool="researchLab" data-dock-category="research"><span class="tool-icon image-tool" data-fallback="⚗"><img src="godot_game/assets/generated/building_research-lab_north.png" alt="" /></span><span><b>科研站</b><small>库存</small></span></button>
+          <button class="tool-button advanced-tool" data-tool="wind" data-dock-category="power" title="不消耗燃料，把风场转成基础电力"><span class="tool-icon image-tool" data-fallback="△"><img src="godot_game/assets/generated/building_wind-generator_north.png" alt="" /></span><span><b>风力发电机</b><small>库存</small></span></button>
+          <button class="tool-button advanced-tool" data-tool="thermal" data-dock-category="power" data-tech-lock="thermal-power" title="消耗煤炭，把化学能转成电力"><span class="tool-icon image-tool" data-fallback="♨"><img src="godot_game/assets/generated/building_thermal-generator_north.png" alt="" /></span><span><b>火力发电机</b><small>库存</small></span></button>
+          <button class="tool-button advanced-tool" data-tool="powerTower" data-dock-category="power" title="以电塔为圆心形成圆形供电覆盖"><span class="tool-key">7</span><span class="tool-icon image-tool power-tower-icon" data-fallback="⌁"><img src="godot_game/assets/generated/building_power-tower_v01.svg" alt="" /></span><span><b>电力塔</b><small>库存</small></span></button>
+          <button class="tool-button advanced-tool" data-tool="longPowerTower" data-dock-category="power" data-tech-lock="power-transmission" title="需要远距输电"><span class="tool-key">8</span><span class="tool-icon image-tool long-power-tower-icon" data-fallback="⌁"><img src="godot_game/assets/generated/building_long-power-tower_v01.svg" alt="" /></span><span><b>远距离电力塔</b><small>库存</small></span></button>
+          <button class="tool-button advanced-tool" data-tool="ultraPowerTower" data-dock-category="power" data-tech-lock="advanced-power-grid" title="需要超远距骨干网"><span class="tool-key">9</span><span class="tool-icon image-tool ultra-power-tower-icon" data-fallback="⌁"><img src="godot_game/assets/generated/building_ultra-power-tower_v01.svg" alt="" /></span><span><b>超远距离电力塔</b><small>库存</small></span></button>
+          <button class="tool-button advanced-tool" data-tool="solidStorage" data-dock-category="storage" title="只接受固体资源"><span class="tool-icon image-tool" data-fallback="▣"><img src="godot_game/assets/generated/building_solid-storage_v01.svg" alt="" /></span><span><b>固体仓储</b><small>库存</small></span></button>
+          <button class="tool-button advanced-tool" data-tool="liquidStorage" data-dock-category="storage" data-tech-lock="fluid-storage" title="只接受水与原油"><span class="tool-icon image-tool" data-fallback="≈"><img src="godot_game/assets/generated/building_liquid-storage_v01.svg" alt="" /></span><span><b>液体仓储</b><small>库存</small></span></button>
+          <button class="tool-button advanced-tool" data-tool="gasStorage" data-dock-category="storage" data-tech-lock="gas-storage" title="只接受天然气"><span class="tool-icon image-tool" data-fallback="∿"><img src="godot_game/assets/generated/building_gas-storage_v01.svg" alt="" /></span><span><b>气体仓储</b><small>库存</small></span></button>
+        </div>
       </nav>
 
       <div class="terrain-legend" aria-label="地表状态图例">
@@ -224,7 +235,7 @@
         <section class="route-log-section"><div class="tech-section-heading"><div><span class="eyebrow">FLIGHT LOG</span><h3>航线记录</h3></div><span class="section-count" id="route-log-count">0 条</span></div><div class="route-log" id="route-log"><span class="route-log-empty">暂无航线记录</span></div></section>
       </aside>
 
-      <div class="game-hint"><span>滚轮缩放</span><span>右键拖动镜头</span><span>R 旋转建筑</span><span>分拣器：从接口拖到端点</span><span>T 科技</span><span>M 星图</span><span>ESC 取消</span></div>
+      <div class="game-hint"><span>滚轮缩放</span><span>右键拖动镜头</span><span>右键取消建造</span><span>R 旋转</span><span>ESC 取消</span></div>
       <div class="game-toast" id="game-toast"><span class="toast-dot"></span><span id="toast-message">准备开始建造</span></div>
       <div class="paused-overlay" id="paused-overlay" hidden><strong>SIMULATION PAUSED</strong><span>按 Space 继续</span></div>
     </div>

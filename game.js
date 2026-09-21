@@ -276,8 +276,8 @@ const kitDescriptions = {
 const handcraftRecipes = [
   ...Object.keys(buildings).filter(type => type !== 'storage').map(type => ({
     id: type,
-    label: `${buildings[type].label}套件`,
-    description: kitDescriptions[type] || `${buildings[type].label}的部署套件。`,
+    label: `${buildings[type].label}`,
+    description: kitDescriptions[type] || `${buildings[type].label}的部署组件。`,
     outputLabel: `${buildings[type].label} ×1`,
     outputType: 'kit',
     output: type,
@@ -598,6 +598,7 @@ const state = {
   camera: { x: 0, y: 1 },
   zoom: .78,
   tool: 'inspect',
+  dockCategory: 'extract',
   rotation: 0,
   paused: false,
   animTime: 0,
@@ -636,6 +637,17 @@ function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
 function formatNumber(value) { return Math.max(0, Math.floor(value)).toLocaleString('en-US'); }
 function hasImage(image) { return image && image.complete && image.naturalWidth > 0; }
 function escapeHtml(value) { return String(value).replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character])); }
+
+const dockCategoryByTool = Object.freeze({
+  inspect: 'tools', demolish: 'tools',
+  miner: 'extract', waterPump: 'extract', oilExtractor: 'extract', gasExtractor: 'extract',
+  belt: 'logistics', sorter: 'logistics', logisticsStation: 'logistics',
+  smelter: 'manufacture', assembler: 'manufacture', workbench: 'manufacture',
+  researchLab: 'research',
+  wind: 'power', thermal: 'power', powerTower: 'power', longPowerTower: 'power', ultraPowerTower: 'power',
+  storage: 'storage', solidStorage: 'storage', liquidStorage: 'storage', gasStorage: 'storage'
+});
+const dockCategories = new Set(['tools', 'extract', 'logistics', 'manufacture', 'research', 'power', 'storage']);
 
 function isInsideWorld(cell) {
   return Boolean(cell)
@@ -1421,7 +1433,7 @@ function sorterPlacementPreview() {
 function placeSorterBetween(building, belt, mode) {
   const placement = findSorterPlacement(building, belt, mode);
   if (!placement) { showToast('分拣器需要同时贴近建筑接口和传送带端点', 'warning'); return false; }
-  if (!canUseKit('sorter')) { showToast('缺少分拣器套件 · 请打开制造面板', 'warning'); return false; }
+  if (!canUseKit('sorter')) { showToast('没有分拣器库存 · 请打开制造面板', 'warning'); return false; }
   const sorter = makeBuilding('sorter', placement.cell.x, placement.cell.y);
   sorter.sorterMode = mode;
   sorter.rotation = mode === 'output' ? 0 : 180;
@@ -1693,7 +1705,7 @@ function craftRecipe(id) {
   if (recipe.outputType === 'kit') state.kits[recipe.output] = kitCount(recipe.output) + recipe.amount;
   else state.inventory[recipe.output] = (state.inventory[recipe.output] || 0) + recipe.amount;
   saveGame();
-  showToast(`${recipe.outputLabel} 已加入待放置套件`);
+  showToast(`${recipe.outputLabel} 已加入建筑库存`);
   renderCraftPanel();
   updateHUD();
 }
@@ -1769,7 +1781,7 @@ function placementCheck(type, cell) {
     return { valid: false, reason: `需要完成「${buildingTechName(type)}」`, reasonCode: 'tech' };
   }
   if (!canUseKit(type)) {
-    return { valid: false, reason: `缺少${meta.label}套件 · 请打开制造面板`, reasonCode: 'kit' };
+    return { valid: false, reason: `没有${meta.label}库存 · 请打开制造面板`, reasonCode: 'kit' };
   }
   const footprint = footprintCells(cell, meta.size);
   const outOfBounds = footprint.find(entry => !isInsideWorld(entry));
@@ -3028,7 +3040,7 @@ function drawPreview() {
           : isTerrainBlocked(footprintCell)
             ? 'terrain'
             : resourceNodeAt(footprintCell) ? 'resource' : null;
-    const tileColor = issue === 'terrain' ? '#ff9b3d' : issue ? '#ee6a65' : cellColor;
+    const tileColor = issue === 'terrain' ? '#ff9b3d' : issue === 'resource' ? '#f4b04d' : issue ? '#ee6a65' : cellColor;
     ctx.globalAlpha = issue ? .56 : .36;
     ctx.fillStyle = `${tileColor}36`;
     ctx.strokeStyle = tileColor;
@@ -3045,6 +3057,11 @@ function drawPreview() {
       ctx.moveTo(tilePoint.x + size / meta.size * .72, tilePoint.y + size / meta.size * .28);
       ctx.lineTo(tilePoint.x + size / meta.size * .28, tilePoint.y + size / meta.size * .72);
       ctx.stroke();
+      if (issue === 'resource') {
+        ctx.beginPath();
+        ctx.arc(tilePoint.x + (TILE * state.zoom) / 2, tilePoint.y + (TILE * state.zoom) / 2, Math.max(3, TILE * state.zoom * .11), 0, Math.PI * 2);
+        ctx.stroke();
+      }
     }
   });
   ctx.restore();
@@ -3127,15 +3144,66 @@ function findUnconfiguredSmelter(raw) {
   })[0];
 }
 
+function dockCategoryForTool(tool) {
+  return dockCategoryByTool[tool] || 'extract';
+}
+
+function setDockCategory(category) {
+  const nextCategory = dockCategories.has(category) ? category : 'extract';
+  state.dockCategory = nextCategory;
+  all('.dock-category-button').forEach(button => {
+    const active = button.dataset.dockCategory === nextCategory;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-selected', String(active));
+  });
+  all('.tool-button').forEach(button => {
+    button.hidden = button.dataset.dockCategory !== nextCategory;
+  });
+}
+
+function updateDock() {
+  setDockCategory(state.dockCategory || 'extract');
+}
+
+function updateGoalPanel(diagnostic = getFactoryDiagnostic()) {
+  const panel = query('#goal-panel');
+  if (!panel) return;
+  const phaseLabels = { mining: '落地阶段', smelting: '工业阶段', power: '能源阶段', research: '科研阶段', interstellar: '远征阶段', stellar: '恒星工程', complete: '能源网络' };
+  const phase = phaseLabels[diagnostic.stage] || '当前阶段';
+  query('#goal-phase-label').textContent = phase;
+  query('#goal-current-title').textContent = diagnostic.title;
+  query('#goal-current-text').textContent = diagnostic.text;
+  query('#goal-current-fill').style.width = `${diagnostic.progress}%`;
+  query('#goal-current-progress').textContent = `${Math.round(diagnostic.progress)}% 完成`;
+  query('#goal-current-action').textContent = diagnostic.action || '查看工厂';
+  query('#goal-button-state').textContent = phase.replace('阶段', '');
+}
+
+function toggleGoalPanel(force) {
+  const panel = query('#goal-panel');
+  const open = typeof force === 'boolean' ? force : panel.hidden;
+  panel.hidden = !open;
+  if (open) {
+    query('#tech-panel').hidden = true;
+    query('#star-map-panel').hidden = true;
+    query('#career-panel').hidden = true;
+    query('#craft-panel').hidden = true;
+    updateGoalPanel();
+  }
+}
+
 function updateObjective() {
   const diagnostic = getFactoryDiagnostic();
   const snapshot = factoryProgressSnapshot();
   const title = query('#objective-title');
   const text = query('#objective-text');
   const fill = query('#objective-fill');
+  const phaseLabels = { mining: '落地阶段', smelting: '工业阶段', power: '能源阶段', research: '科研阶段', interstellar: '远征阶段', stellar: '恒星工程', complete: '能源网络' };
   title.textContent = diagnostic.title;
   text.textContent = diagnostic.text;
   fill.style.width = `${diagnostic.progress}%`;
+  query('#objective-stage').textContent = phaseLabels[diagnostic.stage] || '当前阶段';
+  query('#objective-progress-label').textContent = `${Math.round(diagnostic.progress)}%`;
   query('#objective-action').textContent = diagnostic.action || '查看工厂';
   const steps = [
     { label: '采矿', done: snapshot.hasMiner },
@@ -3146,6 +3214,7 @@ function updateObjective() {
   ];
   query('#objective-steps').innerHTML = steps.map(step => `<span class="objective-step${step.done ? ' done' : ''}"><i>${step.done ? '✓' : '·'}</i>${step.label}</span>`).join('');
   query('#objective-action').dataset.action = diagnostic.action || '查看设施';
+  updateGoalPanel(diagnostic);
 }
 
 function buildingRecipeText(building) {
@@ -3559,7 +3628,7 @@ function updateFactoryMonitor() {
   query('#monitor-buildings').textContent = `${activeBuildings}/${state.buildings.length}`;
   query('#monitor-items').textContent = formatNumber(state.items.length);
   query('#monitor-trips').textContent = formatNumber(state.interstellar.completedTrips);
-  query('#monitor-advice-text').textContent = `${diagnostic.title} · ${diagnostic.text}`;
+  query('#monitor-advice-text').textContent = diagnostic.title;
   const action = query('#monitor-advice-action');
   action.hidden = !diagnostic.action;
   action.textContent = diagnostic.action || '执行建议';
@@ -3648,8 +3717,8 @@ function renderCraftPanel() {
   const materialSummary = ['iron', 'copper', 'silicon'].map(resource => `${resources[resource].label} ${formatNumber(state.inventory[resource] || 0)}`).join(' · ');
   const kitSummary = handcraftRecipes
     .filter(recipe => recipe.outputType === 'kit' && kitCount(recipe.output) > 0)
-    .map(recipe => `${recipe.label.replace('套件', '')} ${kitCount(recipe.output)}`)
-    .join(' · ') || '暂无待放置套件';
+    .map(recipe => `${recipe.label} ${kitCount(recipe.output)}`)
+    .join(' · ') || '暂无可用建筑';
   query('#craft-material-summary').textContent = materialSummary;
   query('#craft-kit-summary').textContent = kitSummary;
   host.innerHTML = handcraftRecipes.map(recipe => {
@@ -3705,7 +3774,7 @@ function updateHUD() {
   query('#power-readout').style.color = state.powerSummary.blackoutCount > 0 ? '#ee6a65' : state.powerSummary.highLoadCount > 0 ? '#ff9b3d' : '#62d69a';
   query('#power-fill').style.width = `${clamp(Number.isFinite(totalLoadRatio) ? totalLoadRatio * 100 : 100, 4, 100)}%`;
   query('#power-fill').style.background = state.powerSummary.blackoutCount > 0 ? '#ee6a65' : state.powerSummary.highLoadCount > 0 ? '#ff9b3d' : '#62d69a';
-  query('#craft-button-state').textContent = `${Object.values(state.kits).reduce((total, amount) => total + Math.floor(amount || 0), 0)} 套件`;
+  query('#craft-button-state').textContent = `可用 ${Object.values(state.kits).reduce((total, amount) => total + Math.floor(amount || 0), 0)}`;
   const modeLabel = state.tool === 'inspect' ? '检视模式' : state.tool === 'demolish' ? '拆除模式' : buildings[state.tool]?.label || '传送带';
   query('#tool-label').textContent = modeLabel;
   query('#build-mode-badge').dataset.mode = state.tool;
@@ -3729,10 +3798,14 @@ function updateHUD() {
     } else if (state.tool !== 'demolish') {
       const placement = placementCheck(state.tool, cell);
       if (placement.reasonCode === 'terrain' && placement.terrain) readout = `GRID ${String(cell.x).padStart(2, '0')},${String(cell.y).padStart(2, '0')} · ${placement.terrain.short}`;
-      readout += placement.valid ? ' · 可建造' : ` · ${placement.reason}`;
+      const placementLabel = placement.valid
+        ? '可建造'
+        : ({ building: '体积重叠', resource: '资源占用', belt: '传送带冲突', terrain: `${placement.terrain?.short || '地形'}禁建`, bounds: '超出边界', kit: '库存不足', tech: '科技未解锁' }[placement.reasonCode] || placement.reason);
+      readout += ` · ${placementLabel}`;
     }
     query('#cursor-readout').textContent = readout;
   }
+  updateDock();
   all('.tool-button').forEach(button => button.classList.toggle('selected', button.dataset.tool === state.tool));
   all('.tool-button').forEach(button => {
     const meta = buildings[button.dataset.tool];
@@ -3742,7 +3815,7 @@ function updateHUD() {
     const cost = button.querySelector('small');
     if (cost && meta) cost.textContent = locked
       ? `需 ${techById[techLock]?.label || '科技'}`
-      : `套件 ${kitCount(button.dataset.tool)} · ${kitCount(button.dataset.tool) > 0 ? '可直接放置' : '请先制造'}`;
+      : `库存 ${kitCount(button.dataset.tool)} · ${kitCount(button.dataset.tool) > 0 ? '可建造' : '先制造'}`;
   });
   query('#map-button-state').textContent = state.interstellar.route ? '航线中' : isInterstellarUnlocked() ? '已接入' : '未接入';
   const selected = state.buildings.find(building => building.id === state.selectedId);
@@ -3884,6 +3957,7 @@ function focusBuilding(building) {
 
 function cancelToolSelection(announce = false) {
   state.tool = 'inspect';
+  setDockCategory('tools');
   state.selectedId = null;
   state.selectedBeltId = null;
   state.pointer.startCell = null;
@@ -3908,6 +3982,7 @@ function selectTool(tool) {
     return;
   }
   state.tool = tool;
+  setDockCategory(dockCategoryForTool(tool));
   state.selectedId = null;
   state.selectedBeltId = null;
   state.pointer.startCell = null;
@@ -3926,6 +4001,7 @@ function closeFactoryPanels() {
   query('#star-map-panel').hidden = true;
   query('#career-panel').hidden = true;
   query('#craft-panel').hidden = true;
+  query('#goal-panel').hidden = true;
 }
 
 function runDiagnosticAction(diagnostic = getFactoryDiagnostic()) {
@@ -4163,6 +4239,7 @@ function runQaPlaythrough() {
   state.buildings = [];
   state.belts = [];
   const mineralCorePlacement = placementCheck('smelter', { x: 5, y: -4 });
+  const minerCorePlacement = placementCheck('miner', { x: -6, y: -2 });
   const adjacentMinerCell = { x: 3, y: -6 };
   const adjacentMinerPlacement = placementCheck('miner', adjacentMinerCell);
   state.buildings = resourcePlacementBuildings;
@@ -4170,6 +4247,7 @@ function runQaPlaythrough() {
   check(!rockPlacement.valid && rockPlacement.reasonCode === 'terrain', '岩石地形仍然允许放置建筑');
   check(!waterPlacement.valid && waterPlacement.reasonCode === 'terrain', '水域地形仍然允许放置建筑');
   check(!mineralCorePlacement.valid && mineralCorePlacement.reasonCode === 'resource' && mineralCorePlacement.blockedCell.x === 5 && mineralCorePlacement.blockedCell.y === -4, '建筑 footprint 仍然可以压住矿脉核心格');
+  check(!minerCorePlacement.valid && minerCorePlacement.reasonCode === 'resource', '采矿机仍然可以压住矿脉核心格');
   check(Boolean(adjacentMinerPlacement.valid && findNodeForBuilding({ type: 'miner', ...adjacentMinerCell })?.id === 'silicon-west'), '采矿机贴近矿脉时没有保留覆盖范围判定');
   check(findBeltPath({ x: 13, y: -7 }, { x: 13, y: -5 }).length === 0, '传送带仍然可以穿过禁建地形');
   check(!deliver(lab, 'copperIngot'), '建筑仍然允许绕过分拣器直接进料');
@@ -4282,14 +4360,14 @@ function runQaPlaythrough() {
   const assemblerPlacementCell = { x: 12, y: 8 };
   const assemblerKitsBeforePlacementQa = kitCount('assembler');
   state.kits.assembler = 0;
-  check(placementCheck('assembler', assemblerPlacementCell).reasonCode === 'kit', '建筑库存耗尽后仍可绕过套件直接建造');
+  check(placementCheck('assembler', assemblerPlacementCell).reasonCode === 'kit', '建筑库存耗尽后仍可绕过库存限制');
   state.kits.assembler = assemblerKitsBeforePlacementQa;
-  check(placementCheck('assembler', assemblerPlacementCell).valid, '组装机解锁并拥有套件后仍无法进入建造状态');
+  check(placementCheck('assembler', assemblerPlacementCell).valid, '组装机解锁并拥有库存后仍无法进入建造状态');
   const windKitsBeforeDemolitionQa = kitCount('wind');
   const demolitionQaBuilding = makeBuilding('wind', 25, 12);
   state.buildings.push(demolitionQaBuilding);
   removeAt({ x: demolitionQaBuilding.x, y: demolitionQaBuilding.y });
-  check(kitCount('wind') === windKitsBeforeDemolitionQa + 1, '拆除建筑没有返还对应套件库存');
+  check(kitCount('wind') === windKitsBeforeDemolitionQa + 1, '拆除建筑没有返还对应建筑库存');
   const processorBeforeAssemblerCheck = storageAmount('processor');
   simulateBuildings(3);
   const assemblerHasProduced = (assembler.output.processor || 0) > 0
@@ -4433,6 +4511,22 @@ document.querySelectorAll('[data-tool]').forEach(button => {
     selectTool(button.dataset.tool);
   });
 });
+document.querySelectorAll('[data-dock-category]').forEach(button => {
+  button.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    setDockCategory(button.dataset.dockCategory);
+  });
+});
+query('#goal-button').addEventListener('click', () => toggleGoalPanel());
+query('#close-goal-panel').addEventListener('click', () => toggleGoalPanel(false));
+query('#objective-detail').addEventListener('click', () => toggleGoalPanel(true));
+query('#monitor-detail-button').addEventListener('click', () => toggleGoalPanel(true));
+query('#goal-current-action').addEventListener('click', () => {
+  const diagnostic = getFactoryDiagnostic();
+  toggleGoalPanel(false);
+  runDiagnosticAction(diagnostic);
+});
 query('#pause-button').addEventListener('click', togglePause);
 query('#speed-button').addEventListener('click', toggleSimulationSpeed);
 query('#career-button').addEventListener('click', () => toggleCareerPanel());
@@ -4483,6 +4577,7 @@ query('#reset-button').addEventListener('click', () => {
   state.camera = { x: 0, y: 1 };
   state.zoom = .78;
   state.tool = 'inspect';
+  state.dockCategory = 'extract';
   state.selectedBeltId = null;
   state.rotation = 0;
   state.pointer.startCell = null;
