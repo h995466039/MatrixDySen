@@ -648,6 +648,7 @@ const dockCategoryByTool = Object.freeze({
   storage: 'storage', solidStorage: 'storage', liquidStorage: 'storage', gasStorage: 'storage'
 });
 const dockCategories = new Set(['tools', 'extract', 'logistics', 'manufacture', 'research', 'power', 'storage']);
+let renderedDockCategory = null;
 
 function isInsideWorld(cell) {
   return Boolean(cell)
@@ -3151,6 +3152,7 @@ function dockCategoryForTool(tool) {
 function setDockCategory(category) {
   const nextCategory = dockCategories.has(category) ? category : 'extract';
   state.dockCategory = nextCategory;
+  if (renderedDockCategory === nextCategory) return;
   all('.dock-category-button').forEach(button => {
     const active = button.dataset.dockCategory === nextCategory;
     button.classList.toggle('active', active);
@@ -3159,6 +3161,7 @@ function setDockCategory(category) {
   all('.tool-button').forEach(button => {
     button.hidden = button.dataset.dockCategory !== nextCategory;
   });
+  renderedDockCategory = nextCategory;
 }
 
 function updateDock() {
