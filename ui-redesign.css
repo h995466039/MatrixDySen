@@ -1,0 +1,399 @@
+/*
+ * Planetary operations console
+ * The canvas is the work surface; HTML panels are reserved for decisions,
+ * status, and inventory. Keep the existing game.css selectors so the game
+ * logic and all modal workstations continue to use the same DOM contract.
+ */
+:root {
+  --sky: #090f11;
+  --sky-2: #10191a;
+  --panel: #111b1c;
+  --panel-strong: #0d1517;
+  --line: rgba(212, 218, 197, .16);
+  --line-bright: rgba(233, 194, 104, .52);
+  --ink: #f1eddb;
+  --muted: #abb1a8;
+  --faint: #717c7c;
+  --lime: #ded46d;
+  --cyan: #77c8c3;
+  --orange: #eb9a4d;
+  --red: #dc7067;
+  --green: #86c995;
+  --font: Bahnschrift, "DIN Alternate", "Microsoft YaHei UI", "Noto Sans SC", sans-serif;
+  --panel-shadow: 0 5px 12px rgba(0, 0, 0, .28);
+}
+
+html, body { background: var(--sky); }
+body { color: var(--ink); font-family: var(--font); letter-spacing: .01em; }
+button, input, select { font-family: inherit; }
+button:focus-visible { outline-color: var(--orange); }
+.game-shell { background: var(--sky); }
+#game-canvas { filter: saturate(.82) contrast(1.06); }
+.screen-vignette {
+  background:
+    radial-gradient(ellipse at 52% 48%, transparent 28%, rgba(3, 7, 8, .18) 82%, rgba(3, 7, 8, .56) 100%),
+    linear-gradient(180deg, rgba(4, 9, 10, .22), transparent 24%, rgba(4, 9, 10, .24));
+}
+
+.asset-loader { background: #090f11; }
+.asset-loader-panel {
+  border-color: rgba(222, 212, 109, .38);
+  background: #111b1c;
+  box-shadow: var(--panel-shadow);
+}
+.asset-loader-kicker { color: var(--orange); }
+.asset-loader-track { background: rgba(119, 200, 195, .13); }
+.asset-loader-track i { background: var(--cyan); box-shadow: 0 0 12px rgba(119, 200, 195, .42); }
+.asset-loader-meta b { color: var(--lime); }
+
+/* The header behaves like a command rail, not a floating glass strip. */
+.game-topbar {
+  z-index: 20;
+  height: 66px;
+  padding: 0 20px;
+  border-bottom: 1px solid rgba(222, 212, 109, .24);
+  background: #0e1517;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, .26);
+  backdrop-filter: none;
+}
+.game-brand { min-width: 190px; gap: 10px; }
+.game-brand b { color: var(--ink); font-size: 16px; letter-spacing: .1em; }
+.game-brand small { color: var(--faint); letter-spacing: .08em; }
+.brand-orbit { width: 32px; height: 32px; border-color: var(--orange); }
+.brand-orbit::after { background: var(--lime); }
+.brand-orbit i { border-color: var(--cyan); }
+.world-readout {
+  position: absolute;
+  left: 50%;
+  padding: 6px 16px 5px;
+  border: 1px solid var(--line);
+  background: #131d1e;
+  transform: translateX(-50%);
+}
+.world-readout span { color: var(--muted); font-size: 9px; letter-spacing: .16em; }
+.world-readout strong { color: var(--lime); font-size: 11px; letter-spacing: .13em; }
+.top-actions { min-width: 0; gap: 5px; }
+.career-chip, .hud-button {
+  min-height: 32px;
+  border-color: var(--line);
+  background: #131d1e;
+  color: var(--muted);
+}
+.career-chip:hover, .hud-button:hover { border-color: var(--orange); color: var(--ink); background: #182223; }
+.career-chip { padding-inline: 5px 9px; }
+.career-chip img { border-color: rgba(235, 154, 77, .62); background: rgba(235, 154, 77, .13); }
+.craft-trigger { color: var(--orange); }
+.tech-trigger { color: var(--cyan); }
+.map-trigger { color: var(--lime); }
+.craft-glyph, .tech-glyph { color: currentColor; }
+
+/* Inventory is a compact readout block with two deliberate rows on desktop. */
+.resource-hud {
+  z-index: 12;
+  top: 78px;
+  right: 20px;
+  display: flex;
+  align-items: center;
+  width: min(632px, calc(100vw - 40px));
+  gap: 0;
+  padding: 4px;
+  border: 1px solid var(--line);
+  background: #111b1c;
+  box-shadow: var(--panel-shadow);
+  backdrop-filter: none;
+}
+.resource-hud::before {
+  content: "库存";
+  position: absolute;
+  left: 9px;
+  top: -15px;
+  color: var(--faint);
+  font-size: 8px;
+  letter-spacing: .16em;
+}
+.resource-stat {
+  min-width: 52px;
+  flex: 1 1 0;
+  height: 34px;
+  padding: 2px 7px 2px 3px;
+  border-right: 1px solid var(--line);
+}
+.resource-stat img { width: 27px; height: 27px; }
+.resource-stat small, .power-stat small { color: var(--faint); font-size: 8px; }
+.resource-stat b, .power-stat b { color: var(--ink); font-size: 10px; }
+.resource-glyph { font-size: 14px; }
+.processor-mark { width: 25px; height: 25px; border-color: var(--orange); color: var(--orange); background: rgba(235, 154, 77, .12); }
+.power-stat { min-width: 144px; flex: 0 0 144px; padding: 2px 8px 2px 10px; }
+.power-stat b { color: var(--green); white-space: nowrap; }
+.power-stat > i { background: rgba(134, 201, 149, .13); }
+
+/* Panels use the same operational grammar: title, conclusion, next action. */
+.objective-card, .factory-monitor, .research-brief, .selection-card {
+  z-index: 12;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--panel);
+  box-shadow: var(--panel-shadow);
+  backdrop-filter: none;
+}
+.objective-card {
+  top: 94px;
+  left: 20px;
+  width: 272px;
+  padding: 16px;
+  border-color: rgba(235, 154, 77, .42);
+}
+.objective-card::before, .factory-monitor::before, .selection-card::before, .research-brief::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  background: var(--orange);
+}
+.objective-card .eyebrow { color: var(--orange); }
+.objective-card strong { margin-top: 9px; font-size: 15px; letter-spacing: .03em; }
+.objective-card p { margin: 8px 0 12px; color: var(--muted); font-size: 10px; line-height: 1.55; }
+.objective-steps { gap: 5px; }
+.objective-step { color: var(--muted); font-size: 8px; }
+.objective-step.done { color: var(--green); }
+.objective-progress { margin-top: 11px; height: 5px; background: rgba(235, 154, 77, .14); }
+.objective-progress i { background: var(--orange); }
+.objective-action, .monitor-action {
+  min-height: 31px;
+  margin-top: 12px;
+  border: 1px solid rgba(235, 154, 77, .5);
+  color: var(--ink);
+  background: rgba(235, 154, 77, .1);
+  font-size: 9px;
+}
+.objective-action:hover, .monitor-action:hover { border-color: var(--orange); background: rgba(235, 154, 77, .19); }
+
+.factory-monitor {
+  top: 142px;
+  right: 20px;
+  width: 272px;
+  padding: 15px;
+  border-color: rgba(119, 200, 195, .36);
+}
+.factory-monitor::before { background: var(--cyan); }
+.monitor-heading { color: var(--cyan); }
+.monitor-heading .signal-pulse { background: var(--cyan); box-shadow: 0 0 0 4px rgba(119, 200, 195, .12); }
+.monitor-heading b { color: var(--orange); }
+.monitor-metrics { padding: 11px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.monitor-metrics b { color: var(--ink); font-size: 17px; }
+.monitor-advice { color: var(--muted); line-height: 1.45; }
+.monitor-advice-dot { background: var(--orange); box-shadow: 0 0 0 4px rgba(235, 154, 77, .12); }
+.monitor-action { width: 100%; margin-top: 10px; border-color: rgba(119, 200, 195, .42); background: rgba(119, 200, 195, .08); }
+.monitor-action:hover { border-color: var(--cyan); background: rgba(119, 200, 195, .16); }
+
+.research-brief {
+  top: 315px;
+  left: 20px;
+  width: 272px;
+  padding: 14px 16px;
+  border-color: rgba(222, 212, 109, .3);
+}
+.research-brief::before { background: var(--lime); }
+.brief-heading { color: var(--lime); }
+.brief-heading .signal-pulse { background: var(--lime); box-shadow: 0 0 0 4px rgba(222, 212, 109, .1); }
+.brief-heading button { border-color: var(--line); color: var(--lime); background: rgba(222, 212, 109, .07); }
+.research-brief > strong { margin: 10px 0 9px; font-size: 13px; }
+.brief-progress i { background: var(--lime); }
+.brief-meta b { color: var(--lime); }
+
+.selection-card {
+  top: 356px;
+  right: 20px;
+  bottom: auto;
+  width: 272px;
+  max-height: calc(100vh - 405px);
+  overflow-y: auto;
+  padding: 15px;
+  border-color: rgba(119, 200, 195, .4);
+  scrollbar-color: rgba(119, 200, 195, .5) transparent;
+}
+.selection-card::before { background: var(--cyan); }
+.selection-head { margin-bottom: 10px; }
+.selection-head .eyebrow { color: var(--cyan); }
+.selection-head button { border: 1px solid transparent; color: var(--muted); }
+.selection-head button:hover { border-color: var(--line); background: #182223; }
+.selection-card > strong { font-size: 16px; letter-spacing: .03em; }
+.selection-card > span:not(.eyebrow) { color: var(--green); }
+.selection-line { margin-top: 10px; padding-top: 7px; border-top-color: var(--line); }
+.selection-line b { color: var(--ink); }
+.selection-progress { height: 4px; margin-top: 13px; background: rgba(119, 200, 195, .12); }
+.selection-progress i { background: var(--cyan); }
+.selection-delete { min-height: 31px; border-color: rgba(220, 112, 103, .44); background: rgba(220, 112, 103, .08); }
+.selection-delete:hover { border-color: var(--red); background: rgba(220, 112, 103, .16); }
+
+/* A short, centered mode readout keeps placement feedback close to the cursor. */
+.build-mode-badge {
+  z-index: 14;
+  top: 78px;
+  min-height: 29px;
+  padding: 6px 10px;
+  border-color: rgba(222, 212, 109, .42);
+  color: var(--lime);
+  background: #111b1c;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, .22);
+  backdrop-filter: none;
+}
+.build-mode-badge[data-mode="inspect"] { border-color: rgba(171, 177, 168, .35); color: var(--muted); }
+.build-mode-badge[data-mode="demolish"] { border-color: rgba(220, 112, 103, .5); color: var(--red); }
+.build-mode-badge .mode-dot { background: currentColor; box-shadow: 0 0 0 4px rgba(222, 212, 109, .1); }
+.build-mode-badge small { color: var(--faint); }
+
+/* Build catalog: horizontal rack with explicit category markers and compact cards. */
+.build-toolbar {
+  z-index: 18;
+  left: 20px;
+  right: 20px;
+  bottom: 17px;
+  width: auto;
+  max-width: none;
+  min-height: 78px;
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid rgba(222, 212, 109, .28);
+  background-color: #10191a;
+  background-image: linear-gradient(rgba(16, 25, 26, .94), rgba(16, 25, 26, .94)), url('godot_game/assets/generated/industrial_floor_tile_v02.png');
+  background-size: auto, 460px;
+  background-position: center;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, .34);
+  transform: none;
+  backdrop-filter: none;
+  scrollbar-color: rgba(222, 212, 109, .45) transparent;
+}
+.build-toolbar::before {
+  content: "建造目录";
+  position: absolute;
+  left: 10px;
+  top: -15px;
+  color: var(--faint);
+  font-size: 8px;
+  letter-spacing: .16em;
+}
+.toolbar-section-label {
+  align-self: center;
+  flex: 0 0 auto;
+  padding: 0 6px;
+  color: var(--faint);
+  font-size: 8px;
+  letter-spacing: .12em;
+  writing-mode: horizontal-tb;
+  white-space: nowrap;
+}
+.toolbar-divider { flex: 0 0 1px; margin: 6px 2px; background: var(--line); }
+.tool-button {
+  flex: 0 0 122px;
+  min-width: 122px;
+  height: 58px;
+  padding: 6px 8px 6px 6px;
+  border: 1px solid rgba(212, 218, 197, .12);
+  background: #172122;
+}
+.tool-button:hover { border-color: var(--orange); background: #202b2a; }
+.tool-button.selected { border-color: var(--lime); background: rgba(222, 212, 109, .12); box-shadow: inset 0 -2px 0 var(--lime); }
+.tool-button.mode-tool.selected { border-color: var(--muted); box-shadow: inset 0 -2px 0 var(--muted); }
+.tool-button.demolish-button { border-color: rgba(220, 112, 103, .28); }
+.tool-button.demolish-button:hover { border-color: var(--red); background: rgba(220, 112, 103, .12); }
+.tool-icon { width: 34px; height: 34px; border-color: currentColor; }
+.image-tool img { filter: saturate(.82) contrast(1.08); }
+.tool-button b { font-size: 10px; }
+.tool-button small { color: var(--faint); }
+.tool-button[disabled] { filter: saturate(.42); opacity: .62; }
+
+.terrain-legend {
+  z-index: 13;
+  left: 20px;
+  bottom: 108px;
+  padding: 6px 9px;
+  border-color: var(--line);
+  background: #111b1c;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, .2);
+  backdrop-filter: none;
+}
+.terrain-legend-title { color: var(--lime); }
+.terrain-swatch-plain { color: var(--cyan); background-image: url('godot_game/assets/generated/godot-v02-ground-tile.png'); }
+.terrain-swatch-rock { color: #9b9b91; background-image: url('godot_game/assets/generated/godot-v02-ground-tile.png'); }
+.terrain-swatch-water { color: var(--cyan); background-image: url('godot_game/assets/generated/terrain_water_tile_v01.png'); }
+.terrain-swatch-resource { color: var(--red); background: rgba(220, 112, 103, .24); }
+.game-hint { z-index: 13; right: 20px; bottom: 108px; color: var(--faint); }
+.game-hint span::before { color: var(--orange); }
+.game-toast { z-index: 30; bottom: 112px; border-color: rgba(222, 212, 109, .42); background: #111b1c; box-shadow: 0 5px 12px rgba(0, 0, 0, .32); }
+.toast-dot { background: var(--green); box-shadow: 0 0 0 4px rgba(134, 201, 149, .1); }
+.paused-overlay { z-index: 25; border-color: rgba(222, 212, 109, .48); background: #111b1c; backdrop-filter: none; }
+.paused-overlay strong { color: var(--lime); }
+
+/* Dedicated workstations inherit the same solid console language. */
+.tech-panel, .star-map-panel, .career-panel, .craft-panel {
+  z-index: 40;
+  border-color: rgba(222, 212, 109, .38);
+  border-radius: 2px;
+  background-color: #0e1618;
+  background-image: linear-gradient(rgba(14, 22, 24, .965), rgba(14, 22, 24, .965)), url('godot_game/assets/generated/industrial_floor_tile_v02.png');
+  background-size: auto, 560px;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, .42);
+  backdrop-filter: none;
+}
+.tech-panel, .star-map-panel { top: 82px; right: 20px; bottom: 108px; width: min(720px, calc(100vw - 40px)); padding: 20px; }
+.tech-panel-head, .star-map-head, .career-panel-head, .craft-panel-head { border-bottom-color: var(--line); }
+.tech-panel-head h2, .star-map-head h2, .career-panel-head h2, .craft-panel-head h2 { color: var(--ink); letter-spacing: .04em; }
+.panel-close { border-color: var(--line); background: #172122; }
+.panel-close:hover { border-color: var(--orange); color: var(--ink); }
+.active-research, .route-readout { border-color: rgba(119, 200, 195, .36); background: rgba(119, 200, 195, .06); }
+.matrix-stock-item, .cargo-option, .tech-node, .branch-node, .career-card, .craft-recipe { border-color: var(--line); background: #152020; }
+.matrix-stock-item:hover, .matrix-stock-item.active, .cargo-option:hover, .cargo-option.active { border-color: var(--cyan); background: rgba(119, 200, 195, .11); }
+.launch-button, .project-action, .career-confirm { border-color: rgba(235, 154, 77, .5); background: rgba(235, 154, 77, .1); }
+.launch-button:hover:not(:disabled), .project-action:hover:not(:disabled), .career-confirm:hover:not(:disabled) { border-color: var(--orange); background: rgba(235, 154, 77, .19); }
+
+@media (max-width: 900px) {
+  .game-topbar { padding-inline: 14px; }
+  .game-brand { min-width: auto; }
+  .game-brand small, .career-chip, .world-readout span { display: none; }
+  .world-readout { margin-left: auto; margin-right: 8px; padding: 5px 8px; }
+  .top-actions { gap: 4px; }
+  .hud-button { min-width: 30px; padding-inline: 7px; }
+  .hud-button > span:nth-child(2) { display: none; }
+  .resource-hud { top: 76px; right: 14px; width: calc(100vw - 28px); }
+  .objective-card { top: 172px; left: 14px; width: 236px; }
+  .factory-monitor { top: 172px; right: 14px; width: 222px; }
+  .research-brief { top: 355px; left: 14px; width: 236px; }
+  .selection-card { top: 355px; right: 14px; width: 236px; max-height: calc(100vh - 452px); }
+  .build-toolbar { left: 14px; right: 14px; bottom: 14px; }
+  .terrain-legend { left: 14px; bottom: 106px; }
+  .game-hint { right: 14px; bottom: 106px; }
+  .tech-panel, .star-map-panel { top: 76px; right: 14px; bottom: 94px; width: calc(100vw - 28px); }
+}
+
+@media (max-width: 620px) {
+  .game-topbar { height: 58px; }
+  .game-brand b { font-size: 14px; }
+  .brand-orbit { width: 28px; height: 28px; }
+  .resource-hud { top: 68px; right: 10px; width: calc(100vw - 20px); }
+  .resource-hud::before { left: 5px; }
+  .resource-stat:nth-child(n+5) { display: none; }
+  .power-stat { grid-column: span 1; border-left: 1px solid var(--line); }
+  .objective-card { top: 142px; left: 10px; width: calc(100vw - 20px); padding: 12px; }
+  .objective-card p { max-width: 48ch; }
+  .factory-monitor { display: none; }
+  .research-brief { top: 332px; left: 10px; width: calc(100vw - 20px); }
+  .selection-card { top: auto; right: 10px; bottom: 91px; width: calc(100vw - 20px); max-height: 44vh; }
+  .build-mode-badge { top: 61px; max-width: calc(100vw - 20px); }
+  .build-mode-badge small { max-width: 42vw; }
+  .build-toolbar { left: 10px; right: 10px; bottom: 8px; min-height: 69px; padding: 6px; }
+  .build-toolbar::before { display: none; }
+  .toolbar-section-label { display: none; }
+  .tool-button { flex-basis: 102px; min-width: 102px; height: 54px; }
+  .terrain-legend { left: 10px; bottom: 79px; max-width: calc(100vw - 20px); overflow-x: auto; }
+  .game-hint { display: none; }
+  .game-toast { bottom: 80px; max-width: calc(100vw - 20px); }
+  .tech-panel, .star-map-panel, .career-panel, .craft-panel { top: 66px; right: 10px; bottom: 78px; width: calc(100vw - 20px); padding: 13px; }
+  .tech-panel-head h2, .star-map-head h2, .career-panel-head h2, .craft-panel-head h2 { font-size: 17px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-orbit, .career-chip img, .monitor-heading .signal-pulse, .brief-heading .signal-pulse { animation: none; }
+}

@@ -6,8 +6,8 @@
 
 ## 结论
 
-- 浏览器原先声明了 26 个图片资源：16 个存在，10 个缺失；本轮已将其中 6 个映射到 Godot 已生成的透明贴图，并移除 4 个仍无成品的 HTML 破图引用。
-- 浏览器现在使用 `godot-v02-ground-tile.png` 作为连续平原/岩场地表材质、`terrain_water_tile_v01.png` 作为水域材质；网格、星点和戴森施工轨道仍由 Canvas 程序绘制。`industrial_floor_tile_v02.png` 保留为备用素材，当前没有对应的能源核心建筑。
+- 浏览器原先声明了 26 个图片资源：16 个存在，10 个缺失；本轮已将其中 6 个映射到 Godot 已生成的透明贴图，并移除 4 个仍无成品的 HTML 破图引用。2026-09-22 的 UI 重构又把分拣器、风力发电机、火力发电机、科研站和工作台的现有贴图接入建造目录。
+- 浏览器现在使用 `godot-v02-ground-tile.png` 作为连续平原/岩场地表材质、`terrain_water_tile_v01.png` 作为水域材质，并用 `industrial_floor_tile_v02.png` 作为建造目录和工作台的低对比度工业面板纹理；网格、星点和戴森施工轨道仍由 Canvas 程序绘制。
 - `output/imagegen/` 有 42 个 PNG，其中 16 个已经用于浏览器，26 个没有被浏览器使用。
 - Godot 目录有 59 个运行时素材：47 个 PNG、12 个 SVG。它们是另一套贴图管线，不会自动被浏览器使用。
 - `output/` 被 `.gitignore` 忽略，当前生成素材不在 Git 跟踪范围内；全新 checkout 不能复现完整视觉资源。
@@ -30,6 +30,7 @@
 | 建筑 | `building_thermal-generator_north.png` | 浏览器火力发电机运行时降级贴图 |
 | 建筑 | `building_oil-extractor_north.png` | 浏览器石油提取机运行时降级贴图 |
 | 建筑 | `building_storage_north.png` | 浏览器物流仓储运行时贴图 |
+| 建筑 | `building_workbench_north.png` | 浏览器工作台建造目录图标 |
 | 资源 | `resource-*-v01.png` | 铁、铜、硅、冰、铜锭、硅片、处理器、钛 |
 | 角色 | `character-logistics-director-v01.png` | 顶部职业入口、物流主管 |
 | 角色 | `character-production-engineer-v01.png` | 能源工程师、科研先驱职业卡 |
@@ -106,9 +107,9 @@
 - `zyuou-gpt-image-2-5-test.png`
 - `zyuou-skill-validation.png`
 
-### 浏览器备用贴图
+### 浏览器面板纹理
 
-- `godot_game/assets/generated/industrial_floor_tile_v02.png`：已有成品，但当前没有能源核心或工业平台建筑使用它，浏览器也不再预加载。
+- `godot_game/assets/generated/industrial_floor_tile_v02.png`：用于 `ui-redesign.css` 的建造目录、科技、制造和星图工作台背景；没有被误当作能源核心建筑。
 
 ## Godot 贴图管线
 
@@ -139,7 +140,7 @@ Godot 代码会拼接 `building_miner_north.png` 等路径，但目录实际提�
 浏览器在 [game.js](game.js:470) 中叠加 `ground_tile_v02.png` 地表材质；网格线、星点和传送带主体仍由 Canvas 程序绘制。因此：
 
 - 平原、岩场和水域材质贴图已经接入浏览器，地表按世界坐标连续采样，不再只依赖程序色块。
-- `industrial_floor_tile_v02.png` 当前未应用，属于备用工业地面素材。
+- `industrial_floor_tile_v02.png` 已应用在 HTML 工作台和建造目录，未用于 Canvas 行星地表，避免把自然地表误做成整片工业平台。
 - 传送带主体由 Canvas 绘制，只有建造栏使用 `building-conveyor-module-v01.png` 图标。
 
 ### Godot
