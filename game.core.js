@@ -376,10 +376,10 @@ const nodes = [
 const initialNodeState = nodes.map(node => ({ ...node }));
 
 const planetCatalog = [
-  { id: 'home', name: '晨星-03', kicker: 'HOMEWORLD / BASE', role: '母星基地', description: '母星工业区。所有货运舱从这里发射，回收物会直接进入物流仓储。', resources: '本地资源：铁、铜、硅', color: '#69d8da', requires: [], position: { x: .5, y: .5 } },
-  { id: 'forge', name: '熔火-β', kicker: 'FORGE OUTPOST / MINING', role: '钛矿前哨', description: '一颗被潮汐锁定的熔岩行星。稳定的钛矿带埋在昼夜交界线上。', resources: '航线回收：钛 ×8', color: '#ff8d63', requires: ['interstellar-logistics'], reward: { resource: 'titanium', amount: 8 }, travelTime: 12, position: { x: .23, y: .28 } },
-  { id: 'frost', name: '霜环-7', kicker: 'FROST MOON / ICE', role: '冰卫星', description: '环带中的低温卫星。冰晶可以稳定能量矩阵，也能支持远距离燃料储备。', resources: '航线回收：冰 ×28', color: '#8ccfff', requires: ['interstellar-logistics'], reward: { resource: 'ice', amount: 28 }, travelTime: 16, position: { x: .78, y: .27 } },
-  { id: 'archive', name: '档案星', kicker: 'ARCHIVE WORLD / SIGNAL', role: '远古信标', description: '失落文明留下的静默信标。只有恒星网络完成后，货运舱才能安全穿过信号风暴。', resources: '航线回收：信息矩阵 ×3', color: '#c58cff', requires: ['stellar-network'], reward: { resource: 'informationCube', amount: 3 }, travelTime: 20, position: { x: .73, y: .73 } }
+  { id: 'home', name: '晨星-03', kicker: '母星基地', role: '母星基地', description: '母星工业区。所有货运舱从这里发射，回收物会直接进入物流仓储。', resources: '本地资源：铁、铜、硅', color: '#69d8da', requires: [], position: { x: .5, y: .5 } },
+  { id: 'forge', name: '熔火-β', kicker: '钛矿前哨', role: '钛矿前哨', description: '一颗被潮汐锁定的熔岩行星。稳定的钛矿带埋在昼夜交界线上。', resources: '航线回收：钛 ×8', color: '#ff8d63', requires: ['interstellar-logistics'], reward: { resource: 'titanium', amount: 8 }, travelTime: 12, position: { x: .23, y: .28 } },
+  { id: 'frost', name: '霜环-7', kicker: '冰卫星', role: '冰卫星', description: '环带中的低温卫星。冰晶可以稳定能量矩阵，也能支持远距离燃料储备。', resources: '航线回收：冰 ×28', color: '#8ccfff', requires: ['interstellar-logistics'], reward: { resource: 'ice', amount: 28 }, travelTime: 16, position: { x: .78, y: .27 } },
+  { id: 'archive', name: '档案星', kicker: '远古信标', role: '远古信标', description: '失落文明留下的静默信标。只有恒星网络完成后，货运舱才能安全穿过信号风暴。', resources: '航线回收：信息矩阵 ×3', color: '#c58cff', requires: ['stellar-network'], reward: { resource: 'informationCube', amount: 3 }, travelTime: 20, position: { x: .73, y: .73 } }
 ];
 const planetById = Object.fromEntries(planetCatalog.map(planet => [planet.id, planet]));
 
