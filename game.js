@@ -67,6 +67,23 @@ Object.entries(assetPaths).forEach(([key, path]) => {
   assets[key] = image;
 });
 
+// SVG 缩放到画布每帧都会重新栅格化（实测比 PNG 贵约 7 倍）。首次使用时
+// 预栅格化到离屏画布，之后走廉价的位图绘制；PNG 直接返回原图。
+const rasterCache = new Map();
+function rasterizedAsset(key) {
+  const image = assets[key];
+  if (!image || !hasImage(image)) return null;
+  if (image.dataset.svgFallback !== '1') return image;
+  if (!rasterCache.has(key)) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 192;
+    canvas.height = 192;
+    canvas.getContext('2d').drawImage(image, 0, 0, 192, 192);
+    rasterCache.set(key, canvas);
+  }
+  return rasterCache.get(key);
+}
+
 function imageLoadState(image) {
   return hasImage(image) ? 'loaded' : 'fallback';
 }
@@ -827,7 +844,7 @@ function drawResourceNode(node) {
   if (hasImage(assets[meta.image])) {
     const pulse = 1 + Math.sin(state.animTime * 1.8 + node.x * .7 + node.y) * .035;
     const imageSize = size * pulse;
-    ctx.drawImage(assets[meta.image], point.x - imageSize / 2, point.y - imageSize / 2, imageSize, imageSize);
+    ctx.drawImage(rasterizedAsset(meta.image), point.x - imageSize / 2, point.y - imageSize / 2, imageSize, imageSize);
   } else {
     drawResourceGlyph(node.resource, point.x, point.y, size * .72, .92);
   }
@@ -835,7 +852,11 @@ function drawResourceNode(node) {
   roundedRect(ctx, point.x - 39, point.y + size * .44, 78, 18, 3); ctx.fill();
   ctx.fillStyle = meta.color;
   ctx.font = '700 9px Bahnschrift, sans-serif'; ctx.textAlign = 'center';
-  ctx.fillText(`${meta.label}矿脉  ${formatNumber(node.amount)}`, point.x, point.y + size * .44 + 12);
+  if (node._amountLabel === undefined || node._lastAmount !== node.amount) {
+    node._lastAmount = node.amount;
+    node._amountLabel = `${meta.label}矿脉  ${formatNumber(node.amount)}`;
+  }
+  ctx.fillText(node._amountLabel, point.x, point.y + size * .44 + 12);
   ctx.restore();
 }
 
@@ -1233,7 +1254,7 @@ function drawBuilding(building) {
     ctx.save();
     ctx.translate(size / 2, size / 2);
     ctx.scale(imageScale, imageScale);
-    ctx.drawImage(assets[meta.image], -size * .48, -size * .48, size * .96, size * .96);
+    ctx.drawImage(rasterizedAsset(meta.image), -size * .48, -size * .48, size * .96, size * .96);
     if (active) {
       ctx.globalCompositeOperation = 'lighter';
       ctx.strokeStyle = `${meta.color}66`;
@@ -1455,7 +1476,7 @@ function drawSorterPreview() {
       ctx.strokeRect(ghostPoint.x + 2, ghostPoint.y + 2, size - 4, size - 4);
       if (hasImage(assets.sorter)) {
         ctx.globalAlpha = .26;
-        ctx.drawImage(assets.sorter, ghostPoint.x + size * .06, ghostPoint.y + size * .06, size * .88, size * .88);
+        ctx.drawImage(rasterizedAsset('sorter'), ghostPoint.x + size * .06, ghostPoint.y + size * .06, size * .88, size * .88);
       }
       ctx.restore();
     }
@@ -2896,7 +2917,7 @@ function drawItems() {
     ctx.fillStyle = color;
     ctx.shadowColor = color; ctx.shadowBlur = 10;
     if (hasImage(assets[meta.image])) {
-      ctx.drawImage(assets[meta.image], point.x - itemSize / 2, point.y - itemSize / 2, itemSize, itemSize);
+      ctx.drawImage(rasterizedAsset(meta.image), point.x - itemSize / 2, point.y - itemSize / 2, itemSize, itemSize);
     } else {
       drawResourceGlyph(item.resource, point.x, point.y, itemSize, .95);
     }
@@ -3058,7 +3079,7 @@ function drawPreview() {
     ctx.globalAlpha = .28;
     ctx.translate(point.x + size / 2, point.y + size / 2);
     ctx.rotate((state.rotation * Math.PI) / 180);
-    ctx.drawImage(assets[meta.image], -size * .44, -size * .44, size * .88, size * .88);
+    ctx.drawImage(rasterizedAsset(meta.image), -size * .44, -size * .44, size * .88, size * .88);
     ctx.restore();
   }
 }
