@@ -160,18 +160,6 @@ function wireOptionalAssetImages() {
     else showImage();
   };
   all('.matrix-icon img, .image-tool img').forEach(wireImage);
-  const ship = query('#cargo-ship');
-  const shipImage = query('#cargo-ship-image');
-  if (ship && shipImage) {
-    const showShipImage = () => {
-      if (!hasImage(shipImage)) return;
-      shipImage.hidden = false;
-      ship.classList.add('has-image');
-    };
-    shipImage.addEventListener('load', showShipImage);
-    shipImage.addEventListener('error', () => { shipImage.hidden = true; ship.classList.remove('has-image'); });
-    showShipImage();
-  }
 }
 
 function startResearch(id) {
@@ -988,18 +976,24 @@ function getFactoryDiagnostic() {
   const snapshot = factoryProgressSnapshot();
   const powerIssue = state.powerSummary.blackoutCount > 0 || state.powerSummary.highLoadCount > 0;
   if (powerIssue) {
+    const hasGenerator = state.buildings.some(building => ['wind', 'thermal', 'gasTurbine'].includes(building.type) && isBuildingOperational(building));
     const hasTower = state.buildings.some(building => isPowerTowerType(building));
-    const canDeployStarterTower = !hasTower && kitCount('powerTower') > 0;
-    const powerTool = canDeployStarterTower
-      ? 'powerTower'
+    const canDeployStarterGenerator = !hasGenerator && kitCount('wind') > 0;
+    const canDeployStarterTower = hasGenerator && !hasTower && kitCount('powerTower') > 0;
+    const powerTool = canDeployStarterGenerator
+      ? 'wind'
+      : canDeployStarterTower
+        ? 'powerTower'
       : isBuildingUnlocked('wind') ? 'wind' : isBuildingUnlocked('thermal') ? 'thermal' : null;
     const powerLabel = powerTool ? buildings[powerTool].label : '风能捕获科技';
     const powerGapText = state.powerSummary.generation > POWER_EPSILON
       ? `当前发电 ${state.powerSummary.generation.toFixed(1)} MW，用电 ${state.powerSummary.load.toFixed(1)} MW。`
       : '当前没有可用发电。';
     const powerText = state.powerSummary.blackoutCount > 0
-      ? canDeployStarterTower
-        ? `${state.powerSummary.blackoutCount} 个电网已瘫痪。旧产线还没有电力塔，先部署基础电力塔，把设备纳入圆形覆盖范围。`
+      ? canDeployStarterGenerator
+        ? '着陆区还没有发电设备。先部署风力发电机，再用电力塔把厂区接入供电范围。'
+        : canDeployStarterTower
+          ? `${state.powerSummary.blackoutCount} 个电网已瘫痪。发电设备已就位，先部署基础电力塔，把设备纳入圆形覆盖范围。`
         : `${state.powerSummary.blackoutCount} 个电网已瘫痪。${powerGapText}先断开过载电塔或再部署一台发电设备，恢复一个小范围电网。`
       : `${state.powerSummary.highLoadCount} 个电网处于高负载，所有用电设施效率减半。${powerGapText}建议增设发电设备或拆分电网。`;
     return {
@@ -1255,6 +1249,10 @@ function updateHUD() {
       readout += ` · ${placementLabel}`;
     }
     query('#cursor-readout').textContent = readout;
+  } else {
+    query('#cursor-readout').textContent = state.tool === 'inspect'
+      ? '移动到建筑或传送带查看详情'
+      : '移动到地图上预览放置位置';
   }
   updateDock();
   all('.tool-button').forEach(button => button.classList.toggle('selected', button.dataset.tool === state.tool));

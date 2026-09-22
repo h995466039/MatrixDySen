@@ -60,6 +60,7 @@ function selectTool(tool) {
   setDockCategory(dockCategoryForTool(tool));
   state.selectedId = null;
   state.selectedBeltId = null;
+  state.pointer.cell = null;
   state.pointer.startCell = null;
   state.pointer.startBuildingId = null;
   state.pointer.sorterAnchor = null;

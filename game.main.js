@@ -17,6 +17,7 @@ query('#reset-button').addEventListener('click', () => {
   state.belts = [];
   state.items = [];
   state.selectedId = null;
+  state.selectedBeltId = null;
   state.inventory = { ...startingInventory };
   state.kits = { ...startingKits };
   state.nodes = initialNodeState.map(node => ({ ...node }));
@@ -28,6 +29,8 @@ query('#reset-button').addEventListener('click', () => {
   state.career = null;
   state.careerChosen = false;
   state.pendingCareer = 'logistics';
+  state.powerMigration = false;
+  state.paused = false;
   state.researchRate = 0;
   state.basePowerGeneration = 0;
   state.powerGeneration = 0;
@@ -39,10 +42,10 @@ query('#reset-button').addEventListener('click', () => {
   state.zoom = .78;
   state.tool = 'inspect';
   state.dockCategory = 'extract';
-  state.selectedBeltId = null;
   state.rotation = 0;
-  state.pointer.startCell = null;
-  state.pointer.startBuildingId = null;
+  state.pointer = { cell: { x: 0, y: 0 }, down: false, startCell: null, startBuildingId: null, sorterAnchor: null, panning: false, lastX: 0, lastY: 0 };
+  state.sorterRoutingSignature = '';
+  state.production = { second: -1, current: {}, history: [] };
   saveGame();
   renderTechPanel();
   renderStarMap();

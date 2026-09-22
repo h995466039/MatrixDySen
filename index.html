@@ -13,7 +13,7 @@
     <div class="asset-loader" id="asset-loader" role="status" aria-live="polite">
       <div class="asset-loader-panel">
         <div class="asset-loader-mark"><span class="brand-orbit"><i></i><i></i></span><span>星环回声</span></div>
-        <div class="asset-loader-kicker">PLANETARY FACTORY / BOOT SEQUENCE</div>
+        <div class="asset-loader-kicker">行星工厂 · 正在启动</div>
         <h1>正在接入工厂系统</h1>
         <p id="asset-loader-status">正在准备工业素材与星际航线</p>
         <div class="asset-loader-track"><i id="asset-loader-fill"></i></div>
@@ -69,13 +69,13 @@
       </aside>
 
       <aside class="career-panel" id="career-panel" hidden>
-        <div class="career-panel-head"><div><span class="eyebrow">COMMAND LICENSE / 00</span><h2>选择职业</h2><p>职业改变第一小时的解法，之后仍可自由建造与研究。</p></div><button class="panel-close" id="close-career-panel" title="关闭职业面板">×</button></div>
+        <div class="career-panel-head"><div><span class="eyebrow">指挥职业</span><h2>选择职业</h2><p>职业改变第一小时的解法，之后仍可自由建造与研究。</p></div><button class="panel-close" id="close-career-panel" title="关闭职业面板">×</button></div>
         <div class="career-grid" id="career-grid"></div>
         <div class="career-panel-foot"><span id="career-panel-note">选择一个职业后，增益会写入本地工厂档案。</span><button class="career-confirm" id="career-confirm" disabled>确认职业</button></div>
       </aside>
 
       <aside class="craft-panel" id="craft-panel" hidden>
-        <div class="craft-panel-head"><div><span class="eyebrow">FIELD FABRICATION / 00</span><h2>应急制造</h2><p>用随身材料制作建筑和物流组件，不占用电网。</p></div><button class="panel-close" id="close-craft-panel" title="关闭应急制造">×</button></div>
+        <div class="craft-panel-head"><div><span class="eyebrow">随身制造</span><h2>应急制造</h2><p>用随身材料制作建筑和物流组件，不占用电网。</p></div><button class="panel-close" id="close-craft-panel" title="关闭应急制造">×</button></div>
         <div class="craft-stock"><span><small>随身材料</small><b id="craft-material-summary">铁 0 · 铜 0 · 硅 0</b></span><span><small>建筑库存</small><b id="craft-kit-summary">暂无可用建筑</b></span></div>
         <div class="craft-recipes" id="craft-recipes"></div>
       </aside>
@@ -88,7 +88,7 @@
       </aside>
 
       <aside class="selection-card" id="selection-card" hidden>
-        <div class="selection-head"><span class="eyebrow">SELECTED OBJECT</span><button id="close-selection">×</button></div>
+        <div class="selection-head"><span class="eyebrow">当前设施</span><button id="close-selection">×</button></div>
         <strong id="selection-name">采矿机</strong><span id="selection-state">待命</span>
         <div class="selection-line"><span>输入</span><b id="selection-input">无</b></div>
         <div class="selection-line"><span>产出</span><b id="selection-output">0 / min</b></div>
@@ -166,12 +166,12 @@
 
       <aside class="tech-panel" id="tech-panel" hidden>
         <div class="tech-panel-head">
-          <div><span class="eyebrow">RESEARCH NETWORK / 01</span><h2>科技中枢</h2><p>主线推动恒星工程，分支改变工厂解法。</p></div>
+          <div><span class="eyebrow">研究中枢</span><h2>科技中枢</h2><p>主线推动恒星工程，分支改变工厂解法。</p></div>
           <button class="panel-close" id="close-tech-panel" title="关闭科技中枢">×</button>
         </div>
 
         <section class="active-research" aria-label="当前研究">
-          <div class="active-research-copy"><span class="eyebrow">CURRENT RESEARCH</span><strong id="research-name">选择研究目标</strong><span id="research-status">科研网络待命</span></div>
+          <div class="active-research-copy"><span class="eyebrow">当前研究</span><strong id="research-name">选择研究目标</strong><span id="research-status">科研网络待命</span></div>
           <div class="research-score"><b id="research-progress-label">0 / 0</b><small id="research-rate">矩阵 0 / 秒</small></div>
           <div class="research-progress"><i id="research-progress-fill"></i></div>
           <div class="research-requirement"><span id="research-cube-label">研究矩阵待命</span><span id="research-supply-label">库存 0</span></div>
@@ -186,19 +186,19 @@
         </section>
 
         <section class="tech-section">
-          <div class="tech-section-heading"><div><span class="eyebrow">MAINLINE / CONSTELLATION PROGRAM</span><h3>恒星工程主线</h3></div><span class="section-count" id="mainline-count">0 / 6</span></div>
+          <div class="tech-section-heading"><div><span class="eyebrow">主线科技</span><h3>恒星工程主线</h3></div><span class="section-count" id="mainline-count">0 / 6</span></div>
           <div class="tech-track" id="mainline-tech"></div>
         </section>
 
         <section class="tech-section branch-section">
-          <div class="tech-section-heading"><div><span class="eyebrow">BRANCH SYSTEMS</span><h3>技术分支</h3></div><span class="section-count" id="branch-count">0 / 10</span></div>
+          <div class="tech-section-heading"><div><span class="eyebrow">技术分支</span><h3>技术分支</h3></div><span class="section-count" id="branch-count">0 / 10</span></div>
           <div class="branch-grid" id="branch-tech"></div>
         </section>
       </aside>
 
       <aside class="star-map-panel" id="star-map-panel" hidden>
         <div class="star-map-head">
-          <div><span class="eyebrow">INTERSTELLAR COMMAND / 02</span><h2>星际航线</h2><p>把一艘货运舱送出母星，把新资源带回生产线。</p></div>
+          <div><span class="eyebrow">星际航线</span><h2>星际航线</h2><p>把一艘货运舱送出母星，把新资源带回生产线。</p></div>
           <button class="panel-close" id="close-star-map" title="关闭星际航线">×</button>
         </div>
 
@@ -207,7 +207,7 @@
           <div class="star-orbit star-orbit-one"></div><div class="star-orbit star-orbit-two"></div><div class="star-orbit star-orbit-three"></div>
           <div class="star-system-core"><span class="core-flare"></span><b>晨星</b><small>G 型恒星</small></div>
           <div class="route-line" id="route-line"></div>
-          <div class="cargo-ship" id="cargo-ship"><img id="cargo-ship-image" alt="" hidden /><span aria-hidden="true"></span></div>
+          <div class="cargo-ship" id="cargo-ship"><span aria-hidden="true"></span></div>
           <button class="planet-marker planet-home selected" data-planet="home"><span class="planet-sphere planet-home-sphere"></span><b>晨星-03</b><small>母星基地</small></button>
           <button class="planet-marker planet-forge" data-planet="forge"><span class="planet-sphere planet-forge-sphere"></span><b>熔火-β</b><small>钛矿前哨</small></button>
           <button class="planet-marker planet-frost" data-planet="frost"><span class="planet-sphere planet-frost-sphere"></span><b>霜环-7</b><small>冰卫星</small></button>
@@ -216,19 +216,19 @@
         </div>
 
         <section class="route-readout">
-          <div class="route-readout-copy"><span class="eyebrow">ACTIVE CARGO LINK</span><strong id="route-title">暂无运行中的航线</strong><p id="route-status">先完成「星际物流」，再选择一个远端星球。</p></div>
+          <div class="route-readout-copy"><span class="eyebrow">当前航线</span><strong id="route-title">暂无运行中的航线</strong><p id="route-status">先完成「星际物流」，再选择一个远端星球。</p></div>
           <div class="route-score"><b id="route-trip-count">0</b><small>已完成航次</small></div>
           <div class="route-progress"><i id="route-progress-fill"></i></div>
           <div class="route-meta"><span id="route-phase-label">航线待命</span><span id="route-time-label">--</span></div>
         </section>
 
         <section class="planet-dock">
-          <div class="planet-dock-info"><span class="planet-dock-kicker" id="planet-dock-kicker">HOMEWORLD / BASE</span><strong id="planet-dock-name">晨星-03</strong><p id="planet-dock-description">母星工业区。所有货运舱从这里发射，回收物会直接进入物流仓储。</p><div class="planet-reward" id="planet-reward">本地资源：铁、铜、硅</div></div>
+          <div class="planet-dock-info"><span class="planet-dock-kicker" id="planet-dock-kicker">母星基地</span><strong id="planet-dock-name">晨星-03</strong><p id="planet-dock-description">母星工业区。所有货运舱从这里发射，回收物会直接进入物流仓储。</p><div class="planet-reward" id="planet-reward">本地资源：铁、铜、硅</div></div>
           <div class="planet-dock-action"><span class="eyebrow">装载货物</span><div class="cargo-options" id="cargo-options"></div><button class="launch-button" id="launch-route-button"><span>▲</span><b>派遣货运舱</b><small id="launch-route-cost">完成「星际物流」后可用</small></button></div>
         </section>
 
         <section class="stellar-project" id="stellar-project">
-          <div class="tech-section-heading"><div><span class="eyebrow">CONSTELLATION CONSTRUCTION</span><h3>恒星工程</h3></div><span class="section-count" id="stellar-project-state">未解锁</span></div>
+          <div class="tech-section-heading"><div><span class="eyebrow">恒星工程</span><h3>恒星工程</h3></div><span class="section-count" id="stellar-project-state">未解锁</span></div>
           <strong id="stellar-project-title">戴森框架施工台</strong>
           <p id="stellar-project-copy">完成主线科技后，把跨星际回收的材料转化为恒星轨道组件。</p>
           <div class="project-progress"><i id="stellar-project-fill"></i></div>
@@ -236,12 +236,12 @@
           <button class="project-action" id="stellar-project-button" disabled><span>◇</span><b>部署框架组件</b><small id="stellar-project-cost">完成「戴森框架」后可用</small></button>
         </section>
 
-        <section class="route-log-section"><div class="tech-section-heading"><div><span class="eyebrow">FLIGHT LOG</span><h3>航线记录</h3></div><span class="section-count" id="route-log-count">0 条</span></div><div class="route-log" id="route-log"><span class="route-log-empty">暂无航线记录</span></div></section>
+        <section class="route-log-section"><div class="tech-section-heading"><div><span class="eyebrow">航线记录</span><h3>航线记录</h3></div><span class="section-count" id="route-log-count">0 条</span></div><div class="route-log" id="route-log"><span class="route-log-empty">暂无航线记录</span></div></section>
       </aside>
 
       <div class="game-hint"><span>滚轮缩放</span><span>右键拖动镜头</span><span>右键取消建造</span><span>R 旋转</span><span>ESC 取消</span></div>
       <div class="game-toast" id="game-toast"><span class="toast-dot"></span><span id="toast-message">准备开始建造</span></div>
-      <div class="paused-overlay" id="paused-overlay" hidden><strong>SIMULATION PAUSED</strong><span>按 Space 继续</span></div>
+      <div class="paused-overlay" id="paused-overlay" hidden><strong>模拟已暂停</strong><span>按 Space 继续</span></div>
     </div>
     <script src="game.core.js?v=20260922-01"></script>
     <script src="game.world.js?v=20260922-01"></script>
