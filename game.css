@@ -63,7 +63,7 @@ button:focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; }
 .processor-mark { overflow: hidden; }.processor-mark img { width: 100%; height: 100%; object-fit: contain; }
 @keyframes avatar-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-1px); } }
 
-@media (max-width: 900px) { .game-topbar { padding-inline: 14px; }.game-brand { min-width: auto; }.game-brand small, .career-chip, .world-readout span { display: none; }.world-readout { margin-left: auto; margin-right: 12px; }.top-actions { min-width: auto; }.objective-card { left: 14px; top: 88px; width: 220px; }.resource-hud { top: 85px; right: 14px; }.resource-stat { min-width: 56px; }.resource-stat img { width: 27px; height: 27px; }.power-stat { display: none; }.selection-card { right: 14px; bottom: 116px; }.game-hint { right: 14px; bottom: 22px; }.build-toolbar { max-width: calc(100vw - 28px); overflow-x: auto; }.tool-button { min-width: 108px; } }
+@media (max-width: 900px) { .game-topbar { padding-inline: 14px; }.game-brand { min-width: auto; }.game-brand small, .career-chip, .world-readout span:not(#world-name) { display: none; }.world-readout { margin-left: auto; margin-right: 12px; }.top-actions { min-width: auto; }.objective-card { left: 14px; top: 88px; width: 220px; }.resource-hud { top: 85px; right: 14px; }.resource-stat { min-width: 56px; }.resource-stat img { width: 27px; height: 27px; }.power-stat { display: none; }.selection-card { right: 14px; bottom: 116px; }.game-hint { right: 14px; bottom: 22px; }.build-toolbar { max-width: calc(100vw - 28px); overflow-x: auto; }.tool-button { min-width: 108px; } }
 @media (max-width: 620px) { :root { --tile: 38px; }.game-topbar { height: 58px; }.game-brand b { font-size: 14px; }.brand-orbit { width: 28px; height: 28px; }.hud-button { min-width: 30px; padding-inline: 7px; }.hud-button:first-of-type span:last-child { display: none; }.build-mode-badge { top: 68px; }.objective-card { top: 76px; left: 10px; width: 190px; padding: 10px; }.objective-card strong { font-size: 12px; }.objective-card p { font-size: 9px; }.resource-hud { top: 76px; right: 10px; gap: 2px; padding: 3px; }.resource-stat { min-width: 40px; height: 32px; padding-right: 3px; }.resource-stat img { width: 24px; height: 24px; }.resource-stat small { display: none; }.resource-stat b { font-size: 9px; }.processor-mark { width: 22px; height: 22px; font-size: 10px; }.selection-card { right: 10px; bottom: 105px; width: 184px; padding: 10px; }.game-hint { display: none; }.build-toolbar { left: 10px; right: 10px; bottom: 10px; max-width: none; transform: none; }.tool-button { min-width: 104px; }.game-toast { bottom: 87px; max-width: calc(100vw - 28px); min-width: 0; width: max-content; }.paused-overlay { width: calc(100vw - 40px); } }
 
 .tech-trigger { position: relative; color: var(--cyan); }
@@ -310,6 +310,16 @@ button:focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; }
 .launch-button:hover:not(:disabled) { border-color: var(--orange); background: rgba(255, 155, 61, .22); }
 .launch-button:disabled { cursor: default; border-color: var(--line); color: var(--faint); background: rgba(14, 31, 45, .55); }
 .launch-button:disabled span { color: var(--faint); }
+.planet-land-button { min-height: 38px; display: grid; grid-template-columns: 22px minmax(0, 1fr); grid-template-rows: 1fr 1fr; column-gap: 7px; align-items: center; padding: 6px 9px; border: 1px solid rgba(105, 216, 218, .42); color: var(--ink); background: rgba(105, 216, 218, .08); text-align: left; }
+.planet-land-button span { grid-row: span 2; color: var(--cyan); font-size: 15px; }
+.planet-land-button b { font-size: 9px; }
+.planet-land-button small { color: var(--muted); font-size: 8px; }
+.planet-land-button:hover:not(:disabled) { border-color: var(--cyan); background: rgba(105, 216, 218, .16); }
+.planet-land-button:disabled { cursor: default; border-color: var(--line); color: var(--faint); background: rgba(14, 31, 45, .55); }
+.planet-land-button:disabled span { color: var(--faint); }
+.stellar-energy-readout { margin-top: 7px; padding: 7px 8px; border-left: 2px solid var(--lime); color: var(--muted); background: rgba(199, 217, 76, .06); font-size: 8px; line-height: 1.4; }
+.planet-marker.current-planet { filter: brightness(1.18); }
+.planet-marker.current-planet::after { content: '当前'; position: absolute; top: -13px; left: 50%; transform: translateX(-50%); color: var(--lime); font-size: 7px; letter-spacing: .08em; }
 .stellar-project { margin-top: 14px; padding: 12px 0 13px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .stellar-project .tech-section-heading { margin-bottom: 8px; }.stellar-project .section-count { color: var(--lime); }.stellar-project.project-locked .section-count { color: var(--faint); }.stellar-project.project-complete .section-count { color: var(--green); }
 .stellar-project > strong { display: block; color: var(--ink); font-size: 13px; }.stellar-project > p { margin: 5px 0 9px; color: var(--muted); font-size: 9px; line-height: 1.45; }.stellar-project.project-locked > strong { color: var(--muted); }

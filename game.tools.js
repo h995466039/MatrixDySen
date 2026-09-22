@@ -169,6 +169,8 @@ function applyQaDemoState() {
   state.buildings = demoBuildings;
   state.belts = demoBelts;
   state.nodes = initialNodeState.map(node => ({ ...node }));
+  state.activePlanet = 'home';
+  state.planetSnapshots = {};
   state.inventory = { ...startingInventory, iron: 320, copper: 160, silicon: 120, coal: 24, ironIngot: 18, copperIngot: 24, siliconWafer: 18, processor: 12, electromagneticCube: 28, energyCube: 18, structureCube: 16, informationCube: 8, titanium: 14 };
   state.items = [{ id: 'qa-item-1', beltId: demoBelts[0].id, sourceId: demoBuildings[1].id, resource: 'copper', progress: .35 }, { id: 'qa-item-2', beltId: demoBelts[1].id, sourceId: demoBuildings[2].id, resource: 'copperIngot', progress: .68 }];
   state.research = { current: null, progress: 0 };
@@ -296,6 +298,8 @@ function runQaPlaythrough() {
   state.research = { current: null, progress: 0 };
   state.interstellar = makeInterstellarState({ selectedPlanet: 'forge', cargo: 'processor' });
   state.stellarProject = makeStellarProject();
+  state.activePlanet = 'home';
+  state.planetSnapshots = {};
   check(!state.buildings.some(building => building.type === 'hub'), '旧能源核心仍然存在于运行时场景');
   check(WORLD_BOUNDS.maxX - WORLD_BOUNDS.minX >= 72 && WORLD_BOUNDS.maxY - WORLD_BOUNDS.minY >= 48, '单星球地图边界没有扩大到行星尺度');
   check(state.nodes.length >= 30 && state.nodes.some(node => Math.abs(node.x) > 20 && Math.abs(node.y) > 14), '资源节点仍然集中在着陆区附近');
@@ -487,6 +491,12 @@ function runQaPlaythrough() {
   check(state.interstellar.route?.phase === 'returning', '货运舱未进入返航');
   simulateInterstellar(13);
   check(state.interstellar.completedTrips === 1 && storageAmount('titanium') === 8, '异星钛资源未回收到物流仓储');
+  const homeFactoryBeforeLanding = state.buildings;
+  switchActivePlanet('forge');
+  check(state.activePlanet === 'forge' && state.nodes.some(node => node.resource === 'titanium'), '完成航次后没有载入熔火-β的独立矿脉');
+  check(state.buildings.length === 1 && state.buildings[0].baseHub, '远端星球没有生成独立着陆仓储');
+  switchActivePlanet('home');
+  check(state.activePlanet === 'home' && state.buildings === homeFactoryBeforeLanding, '返回母星后没有恢复原工厂快照');
   researchQaTech('stellar-network');
   researchQaTech('logistics-mk5');
   check(getBuildingLevel('belt') === 5 && storageCapacity(storage) === 1400, '物流 Mk-V 没有达到五级速度与容量');
@@ -500,6 +510,12 @@ function runQaPlaythrough() {
   storage.stock = { structureCube: 80, titanium: 40, processor: 20 };
   for (let index = 0; index < 20; index += 1) contributeStellarProject();
   check(state.stellarProject.progress === 100, '恒星工程未完成');
+  const qaReceiver = makeBuilding('stellarReceiver', 20, 8);
+  state.buildings.push(qaReceiver);
+  rebuildPowerGrids();
+  const energyBefore = state.stellarProject.energyStored;
+  simulateBuildings(2);
+  check(getPowerGeneration(qaReceiver) > 0 && state.stellarProject.energyStored > energyBefore, '恒星能量接收器没有把戴森框架转成可收集能源');
   const completedBuildings = state.buildings;
   const completedBelts = state.belts;
   const completedItems = state.items;

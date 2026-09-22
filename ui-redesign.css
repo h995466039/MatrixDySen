@@ -347,12 +347,14 @@ button:focus-visible { outline-color: var(--orange); }
 .matrix-stock-item, .cargo-option, .tech-node, .branch-node, .career-card, .craft-recipe { border-color: var(--line); background: #152020; }
 .matrix-stock-item:hover, .matrix-stock-item.active, .cargo-option:hover, .cargo-option.active { border-color: var(--cyan); background: rgba(119, 200, 195, .11); }
 .launch-button, .project-action, .career-confirm { border-color: rgba(235, 154, 77, .5); background: rgba(235, 154, 77, .1); }
+.planet-land-button { border-color: rgba(119, 200, 195, .46); background: rgba(119, 200, 195, .08); }
 .launch-button:hover:not(:disabled), .project-action:hover:not(:disabled), .career-confirm:hover:not(:disabled) { border-color: var(--orange); background: rgba(235, 154, 77, .19); }
+.planet-land-button:hover:not(:disabled) { border-color: var(--cyan); background: rgba(119, 200, 195, .16); }
 
 @media (max-width: 900px) {
   .game-topbar { padding-inline: 14px; }
   .game-brand { min-width: auto; }
-  .game-brand small, .career-chip, .world-readout span { display: none; }
+  .game-brand small, .career-chip, .world-readout span:not(#world-name) { display: none; }
   .world-readout { margin-left: auto; margin-right: 8px; padding: 5px 8px; }
   .top-actions { gap: 4px; }
   .hud-button { min-width: 30px; padding-inline: 7px; }
@@ -549,7 +551,7 @@ body { font-size: 14px; }
 @media (max-width: 900px) {
   .game-topbar { padding-inline: 14px; }
   .game-brand { min-width: auto; }
-  .game-brand small, .career-chip, .world-readout span { display: none; }
+  .game-brand small, .career-chip, .world-readout span:not(#world-name) { display: none; }
   .world-readout { margin-left: auto; margin-right: 8px; }
   .resource-hud { top: 84px; right: 14px; width: calc(100vw - 28px); }
   .objective-card { top: 160px; left: 14px; width: 268px; }

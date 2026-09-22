@@ -17,6 +17,7 @@ let saveFailureNotified = false;
 function saveGame() {
   if (qaDemoMode || qaPlaythroughMode) return;
   try {
+  snapshotCurrentPlanet();
   localStorage.setItem(SAVE_KEY, JSON.stringify({
     buildings: state.buildings,
     belts: state.belts,
@@ -28,6 +29,8 @@ function saveGame() {
     research: state.research,
     interstellar: state.interstellar,
     stellarProject: state.stellarProject,
+    activePlanet: state.activePlanet,
+    planetSnapshots: state.planetSnapshots,
     career: state.career || 'logistics',
     careerChosen: state.careerChosen,
     items: state.items.map(item => ({ id: item.id, beltId: item.beltId, sourceId: item.sourceId, resource: item.resource, progress: item.progress }))

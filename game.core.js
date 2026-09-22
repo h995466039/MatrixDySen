@@ -205,7 +205,8 @@ const buildings = {
   solidStorage: { label: '固体仓储', size: 2, color: '#a7c7ff', power: .15, cost: { iron: 16, copper: 4 }, tech: 'foundation', image: 'solidStorage', storageForm: 'solid' },
   liquidStorage: { label: '液体仓储', size: 2, color: '#5cc8ed', power: .2, cost: { iron: 18, copper: 4 }, tech: 'fluid-storage', image: 'liquidStorage', storageForm: 'liquid' },
   gasStorage: { label: '气体仓储', size: 2, color: '#b6e7ba', power: .22, cost: { iron: 20, copper: 6, processor: 1 }, tech: 'gas-storage', image: 'gasStorage', storageForm: 'gas' },
-  logisticsStation: { label: '行星物流站', size: 3, color: '#c58cff', power: 2.8, cost: { iron: 32, processor: 6, titanium: 4 }, tech: 'interstellar-logistics' }
+  logisticsStation: { label: '行星物流站', size: 3, color: '#c58cff', power: 2.8, cost: { iron: 32, processor: 6, titanium: 4 }, tech: 'interstellar-logistics' },
+  stellarReceiver: { label: '恒星能量接收器', size: 2, color: '#f5e29b', power: .6, generation: 10, cost: { iron: 28, processor: 4, stellarFrame: 2 }, tech: 'dyson-frame' }
 };
 
 const cubeRecipes = {
@@ -222,7 +223,7 @@ const techTree = {
     { id: 'matrix-lab', label: '矩阵实验室', short: '科研主干', description: '将研究矩阵转化为可持续的科技推进力。', requires: ['automated-smelting'], cube: 'structureCube', cost: 22, upgrades: ['researchLab'], upgradeTier: 2, effectText: '科研站矩阵制备速度 +25%' },
     { id: 'interstellar-logistics', label: '星际物流', short: '跨星际主干', description: '接入恒星系航线，授权行星物流站并允许派遣货运舱回收异星资源。', requires: ['matrix-lab'], cube: 'informationCube', cost: 32, unlocks: ['行星物流站、星图与货运舱'] },
     { id: 'stellar-network', label: '恒星网络', short: '跨星际主干', description: '让远端信标加入同一条物流网络，开放档案星航线。', requires: ['interstellar-logistics'], cube: 'informationCube', cost: 40, unlocks: ['档案星航线'] },
-    { id: 'dyson-frame', label: '戴森框架', short: '恒星工程', description: '用异星资源搭建包围恒星的第一圈能量框架。', requires: ['stellar-network'], cube: 'structureCube', cost: 48, unlocks: ['恒星工程阶段'] }
+    { id: 'dyson-frame', label: '戴森框架', short: '恒星工程', description: '用异星资源搭建包围恒星的第一圈能量框架。', requires: ['stellar-network'], cube: 'structureCube', cost: 48, unlocks: ['恒星能量接收器'] }
   ],
   branches: [
     { id: 'sorter-tech', label: '智能分拣', short: '物流分支', description: '升级基础分拣器的识别与分流能力，让同一条物流线可以按物料接入不同产线。', requires: ['planetary-logistics'], cube: 'electromagneticCube', cost: 12, upgrades: ['sorter'], upgradeTier: 2, effectText: '分拣器获得多出口规则与自动分流' },
@@ -274,6 +275,7 @@ const startingKits = {
   gasStorage: 0,
   gasTurbine: 0,
   logisticsStation: 0,
+  stellarReceiver: 0,
   longPowerTower: 0,
   ultraPowerTower: 0,
   belt: 8
@@ -296,6 +298,7 @@ const kitDescriptions = {
   gasStorage: '只接受天然气等气体资源。',
   gasTurbine: '消耗天然气，输出稳定电力。',
   logisticsStation: '建立跨星球货运与资源回收节点。',
+  stellarReceiver: '框架完成后收集恒星能量，并把它转化为本地电网的稳定发电。',
   longPowerTower: '扩大输电半径，连接更远的局部电网。',
   ultraPowerTower: '建立超远距离骨干输电网络。'
 };
@@ -375,13 +378,56 @@ const nodes = [
 ];
 const initialNodeState = nodes.map(node => ({ ...node }));
 
+// 每颗星球都有自己的资源带。资源节点随工厂快照保存，远端星球不再复用母星的矿脉。
+const planetNodeTemplates = {
+  home: initialNodeState,
+  forge: [
+    { id: 'forge-titanium-west', x: -10, y: -4, resource: 'titanium', amount: 78000 },
+    { id: 'forge-titanium-east', x: 8, y: -14, resource: 'titanium', amount: 62400 },
+    { id: 'forge-titanium-south', x: 26, y: 5, resource: 'titanium', amount: 48600 },
+    { id: 'forge-iron-west', x: -24, y: -4, resource: 'iron', amount: 72000 },
+    { id: 'forge-iron-south', x: 4, y: 18, resource: 'iron', amount: 56000 },
+    { id: 'forge-coal-east', x: 19, y: -5, resource: 'coal', amount: 52000 },
+    { id: 'forge-coal-south', x: -20, y: 16, resource: 'coal', amount: 38000 },
+    { id: 'forge-oil-center', x: 10, y: 6, resource: 'crudeOil', amount: 82000 },
+    { id: 'forge-water-west', x: -20, y: 15, resource: 'water', amount: 68000 },
+    { id: 'forge-gas-north', x: -2, y: -12, resource: 'naturalGas', amount: 66000 }
+  ],
+  frost: [
+    { id: 'frost-ice-west', x: -18, y: -4, resource: 'ice', amount: 92000 },
+    { id: 'frost-ice-east', x: 24, y: -8, resource: 'ice', amount: 74000 },
+    { id: 'frost-ice-south', x: -10, y: 15, resource: 'ice', amount: 58000 },
+    { id: 'frost-silicon-north', x: 8, y: -10, resource: 'silicon', amount: 66000 },
+    { id: 'frost-silicon-east', x: 24, y: 7, resource: 'silicon', amount: 52000 },
+    { id: 'frost-iron-west', x: -25, y: -8, resource: 'iron', amount: 64000 },
+    { id: 'frost-coal-south', x: 18, y: 16, resource: 'coal', amount: 42000 },
+    { id: 'frost-water-west', x: -30, y: 8, resource: 'water', amount: 94000 },
+    { id: 'frost-water-east', x: 29, y: 10, resource: 'water', amount: 76000 }
+  ],
+  archive: [
+    { id: 'archive-silicon-west', x: -18, y: -12, resource: 'silicon', amount: 64000 },
+    { id: 'archive-silicon-east', x: 12, y: 13, resource: 'silicon', amount: 52000 },
+    { id: 'archive-iron-north', x: -6, y: -10, resource: 'iron', amount: 72000 },
+    { id: 'archive-iron-south', x: 28, y: -4, resource: 'iron', amount: 48000 },
+    { id: 'archive-coal-east', x: 26, y: 5, resource: 'coal', amount: 42000 },
+    { id: 'archive-gas-west', x: -21, y: 9, resource: 'naturalGas', amount: 68000 },
+    { id: 'archive-water-north', x: 0, y: -14, resource: 'water', amount: 72000 },
+    { id: 'archive-ice-south', x: 22, y: 20, resource: 'ice', amount: 56000 }
+  ]
+};
+
 const planetCatalog = [
-  { id: 'home', name: '晨星-03', kicker: '母星基地', role: '母星基地', description: '母星工业区。所有货运舱从这里发射，回收物会直接进入物流仓储。', resources: '本地资源：铁、铜、硅', color: '#69d8da', requires: [], position: { x: .5, y: .5 } },
-  { id: 'forge', name: '熔火-β', kicker: '钛矿前哨', role: '钛矿前哨', description: '一颗被潮汐锁定的熔岩行星。稳定的钛矿带埋在昼夜交界线上。', resources: '航线回收：钛 ×8', color: '#ff8d63', requires: ['interstellar-logistics'], reward: { resource: 'titanium', amount: 8 }, travelTime: 12, position: { x: .23, y: .28 } },
-  { id: 'frost', name: '霜环-7', kicker: '冰卫星', role: '冰卫星', description: '环带中的低温卫星。冰晶可以稳定能量矩阵，也能支持远距离燃料储备。', resources: '航线回收：冰 ×28', color: '#8ccfff', requires: ['interstellar-logistics'], reward: { resource: 'ice', amount: 28 }, travelTime: 16, position: { x: .78, y: .27 } },
-  { id: 'archive', name: '档案星', kicker: '远古信标', role: '远古信标', description: '失落文明留下的静默信标。只有恒星网络完成后，货运舱才能安全穿过信号风暴。', resources: '航线回收：信息矩阵 ×3', color: '#c58cff', requires: ['stellar-network'], reward: { resource: 'informationCube', amount: 3 }, travelTime: 20, position: { x: .73, y: .73 } }
+  { id: 'home', name: '晨星-03', kicker: '母星基地', role: '母星基地', description: '母星工业区。所有货运舱从这里发射，回收物会直接进入物流仓储。', resources: '本地资源：铁、铜、硅、煤、油、水', localResources: ['iron', 'copper', 'silicon', 'coal', 'crudeOil', 'water', 'naturalGas'], color: '#69d8da', requires: [], position: { x: .5, y: .5 } },
+  { id: 'forge', name: '熔火-β', kicker: '钛矿前哨', role: '钛矿前哨', description: '一颗被潮汐锁定的熔岩行星。稳定的钛矿带埋在昼夜交界线上，适合建立重工业前哨。', resources: '本地资源：钛、铁、煤、原油、水、天然气', localResources: ['titanium', 'iron', 'coal', 'crudeOil', 'water', 'naturalGas'], color: '#ff8d63', requires: ['interstellar-logistics'], reward: { resource: 'titanium', amount: 8 }, travelTime: 12, position: { x: .23, y: .28 } },
+  { id: 'frost', name: '霜环-7', kicker: '冰卫星', role: '冰卫星', description: '环带中的低温卫星。冰晶与水脉密集，是稳定能量矩阵和远距离燃料储备的理想产地。', resources: '本地资源：冰、水、硅、铁、煤', localResources: ['ice', 'water', 'silicon', 'iron', 'coal'], color: '#8ccfff', requires: ['interstellar-logistics'], reward: { resource: 'ice', amount: 28 }, travelTime: 16, position: { x: .78, y: .27 } },
+  { id: 'archive', name: '档案星', kicker: '远古信标', role: '远古信标', description: '失落文明留下的静默信标。稀有硅脉和冰层围绕旧设施分布，适合建设高阶材料前哨。', resources: '本地资源：硅、铁、煤、天然气、水、冰', localResources: ['silicon', 'iron', 'coal', 'naturalGas', 'water', 'ice'], color: '#c58cff', requires: ['stellar-network'], reward: { resource: 'informationCube', amount: 3 }, travelTime: 20, position: { x: .73, y: .73 } }
 ];
 const planetById = Object.fromEntries(planetCatalog.map(planet => [planet.id, planet]));
+
+function clonePlanetNodes(planetId) {
+  const template = planetNodeTemplates[planetId] || planetNodeTemplates.home;
+  return template.map(node => ({ ...node }));
+}
 
 function makeInterstellarState(savedState = null) {
   return {
@@ -397,7 +443,10 @@ function makeInterstellarState(savedState = null) {
 function makeStellarProject(savedState = null) {
   return {
     progress: Number.isFinite(savedState?.progress) ? clamp(savedState.progress, 0, 100) : 0,
-    modules: Number.isFinite(savedState?.modules) ? savedState.modules : 0
+    modules: Number.isFinite(savedState?.modules) ? savedState.modules : 0,
+    energyStored: Number.isFinite(savedState?.energyStored) ? Math.max(0, savedState.energyStored) : 0,
+    energyCollected: Number.isFinite(savedState?.energyCollected) ? Math.max(0, savedState.energyCollected) : 0,
+    energyRate: 0
   };
 }
 
@@ -413,6 +462,32 @@ function makeBuilding(type, x, y, rotation = 0) {
     sorterRules: type === 'sorter' ? {} : undefined,
     routeCursor: type === 'sorter' ? 0 : undefined,
     sorterMode: type === 'sorter' ? 'input' : undefined
+  };
+}
+
+function makePlanetSnapshot(planetId, savedSnapshot = null) {
+  if (savedSnapshot && Array.isArray(savedSnapshot.buildings)) {
+    return {
+      buildings: savedSnapshot.buildings,
+      belts: Array.isArray(savedSnapshot.belts) ? savedSnapshot.belts : [],
+      nodes: Array.isArray(savedSnapshot.nodes) && savedSnapshot.nodes.length ? savedSnapshot.nodes : clonePlanetNodes(planetId),
+      items: Array.isArray(savedSnapshot.items) ? savedSnapshot.items : []
+    };
+  }
+  const landingStorage = makeBuilding('storage', 3, -1);
+  landingStorage.baseHub = true;
+  landingStorage.stock = {};
+  return { buildings: [landingStorage], belts: [], nodes: clonePlanetNodes(planetId), items: [] };
+}
+
+function snapshotCurrentPlanet() {
+  if (!state?.activePlanet) return;
+  state.planetSnapshots = state.planetSnapshots || {};
+  state.planetSnapshots[state.activePlanet] = {
+    buildings: state.buildings,
+    belts: state.belts,
+    nodes: state.nodes,
+    items: state.items
   };
 }
 
@@ -651,6 +726,8 @@ function readSave() {
       research: saved.research && typeof saved.research === 'object' ? saved.research : { current: null, progress: 0 },
       interstellar: makeInterstellarState(saved.interstellar),
       stellarProject: makeStellarProject(saved.stellarProject),
+      activePlanet: planetById[saved.activePlanet] ? saved.activePlanet : 'home',
+      planetSnapshots: saved.planetSnapshots && typeof saved.planetSnapshots === 'object' ? saved.planetSnapshots : {},
       career: saved.career || 'logistics',
       careerChosen: saved.careerChosen !== false,
       powerMigration: hasPowerConsumer && !hasTransmissionTower
@@ -685,6 +762,8 @@ const state = {
   research: saved?.research || { current: null, progress: 0 },
   interstellar: makeInterstellarState(saved?.interstellar),
   stellarProject: makeStellarProject(saved?.stellarProject),
+  activePlanet: saved?.activePlanet && planetById[saved.activePlanet] ? saved.activePlanet : 'home',
+  planetSnapshots: saved?.planetSnapshots && typeof saved.planetSnapshots === 'object' ? saved.planetSnapshots : {},
   career: saved ? (saved.career || 'logistics') : null,
   careerChosen: saved ? saved.careerChosen !== false : false,
   pendingCareer: saved?.career || 'logistics',

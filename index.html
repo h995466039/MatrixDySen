@@ -27,7 +27,7 @@
 
       <header class="game-topbar">
         <div class="game-brand"><span class="brand-orbit"><i></i><i></i></span><span><b>星环回声</b><small>行星工厂 / 早期测试版</small></span></div>
-        <div class="world-readout"><span>晨星-03</span><strong id="game-clock">DAY 001 · 06:00</strong></div>
+        <div class="world-readout"><span id="world-name">晨星-03</span><strong id="game-clock">DAY 001 · 06:00</strong></div>
         <div class="top-actions"><button class="career-chip" id="career-button" title="查看职业能力"><img src="godot_game/assets/generated/character-logistics-director-v01.png" alt="" /><span id="career-label">物流主管</span></button><button class="hud-button goal-trigger" id="goal-button" title="查看远征目标"><span class="goal-glyph">◎</span><span>目标</span><i id="goal-button-state">当前阶段</i></button><button class="hud-button craft-trigger" id="craft-button" title="打开应急制造"><span class="craft-glyph">⌗</span><span>制造</span><i id="craft-button-state">应急</i></button><button class="hud-button tech-trigger" id="tech-button"><span class="tech-glyph">⌬</span><span>科技</span><i id="tech-button-state">待命</i></button><button class="hud-button map-trigger" id="map-button"><span class="map-glyph">✦</span><span>星图</span><i id="map-button-state">母星</i></button><button class="hud-button speed-button" id="speed-button" title="切换模拟速度"><span>»</span><span id="speed-label">1x</span></button><button class="hud-button" id="pause-button"><span id="pause-glyph">Ⅱ</span><span id="pause-label">暂停</span></button><button class="hud-button" id="reset-button" title="重置本地工厂">↻</button></div>
       </header>
 
@@ -147,6 +147,7 @@
           <button class="tool-button advanced-tool" data-tool="wind" data-dock-category="power" title="不消耗燃料，把风场转成基础电力"><span class="tool-key">G</span><span class="tool-icon image-tool" data-fallback="△"><img src="godot_game/assets/generated/building_wind-generator_north.png" alt="" /></span><span><b>风力发电机</b><small>库存</small></span></button>
           <button class="tool-button advanced-tool" data-tool="thermal" data-dock-category="power" data-tech-lock="thermal-power" title="消耗煤炭，把化学能转成电力"><span class="tool-key">H</span><span class="tool-icon image-tool" data-fallback="♨"><img src="godot_game/assets/generated/building_thermal-generator_north.png" alt="" /></span><span><b>火力发电机</b><small>库存</small></span></button>
           <button class="tool-button advanced-tool" data-tool="gasTurbine" data-dock-category="power" data-tech-lock="gas-power" title="消耗天然气，输出稳定电力"><span class="tool-key">J</span><span class="tool-icon image-tool" data-fallback="♨"><img src="godot_game/assets/generated/building_gas-turbine_v01.svg" alt="" /></span><span><b>燃气轮机</b><small>库存</small></span></button>
+          <button class="tool-button advanced-tool stellar-receiver-tool" data-tool="stellarReceiver" data-dock-category="power" data-tech-lock="dyson-frame" title="戴森框架完成后收集恒星能量"><span class="tool-key">K</span><span class="tool-icon" aria-hidden="true">✦</span><span><b>恒星接收器</b><small>库存</small></span></button>
           <button class="tool-button advanced-tool" data-tool="powerTower" data-dock-category="power" title="以电塔为圆心形成圆形供电覆盖"><span class="tool-key">7</span><span class="tool-icon image-tool power-tower-icon" data-fallback="⌁"><img src="godot_game/assets/generated/building_power-tower_v01.svg" alt="" /></span><span><b>电力塔</b><small>库存</small></span></button>
           <button class="tool-button advanced-tool" data-tool="longPowerTower" data-dock-category="power" data-tech-lock="power-transmission" title="需要远距输电"><span class="tool-key">8</span><span class="tool-icon image-tool long-power-tower-icon" data-fallback="⌁"><img src="godot_game/assets/generated/building_long-power-tower_v01.svg" alt="" /></span><span><b>远距离电力塔</b><small>库存</small></span></button>
           <button class="tool-button advanced-tool" data-tool="ultraPowerTower" data-dock-category="power" data-tech-lock="advanced-power-grid" title="需要超远距骨干网"><span class="tool-key">9</span><span class="tool-icon image-tool ultra-power-tower-icon" data-fallback="⌁"><img src="godot_game/assets/generated/building_ultra-power-tower_v01.svg" alt="" /></span><span><b>超远距离电力塔</b><small>库存</small></span></button>
@@ -224,7 +225,7 @@
 
         <section class="planet-dock">
           <div class="planet-dock-info"><span class="planet-dock-kicker" id="planet-dock-kicker">母星基地</span><strong id="planet-dock-name">晨星-03</strong><p id="planet-dock-description">母星工业区。所有货运舱从这里发射，回收物会直接进入物流仓储。</p><div class="planet-reward" id="planet-reward">本地资源：铁、铜、硅</div></div>
-          <div class="planet-dock-action"><span class="eyebrow">装载货物</span><div class="cargo-options" id="cargo-options"></div><button class="launch-button" id="launch-route-button"><span>▲</span><b>派遣货运舱</b><small id="launch-route-cost">完成「星际物流」后可用</small></button></div>
+          <div class="planet-dock-action"><span class="eyebrow">星球行动</span><div class="cargo-options" id="cargo-options"></div><button class="launch-button" id="launch-route-button"><span>▲</span><b>派遣货运舱</b><small id="launch-route-cost">完成「星际物流」后可用</small></button><button class="planet-land-button" id="planet-land-button"><span>⌂</span><b id="planet-land-label">进入星球</b><small id="planet-land-note">完成一次航次后开放</small></button></div>
         </section>
 
         <section class="stellar-project" id="stellar-project">
@@ -233,6 +234,7 @@
           <p id="stellar-project-copy">完成主线科技后，把跨星际回收的材料转化为恒星轨道组件。</p>
           <div class="project-progress"><i id="stellar-project-fill"></i></div>
           <div class="project-meta"><span id="stellar-project-progress">0 / 100</span><span id="stellar-project-supply">结构矩阵 4 · 钛 2 · 芯片 1</span></div>
+          <div class="stellar-energy-readout" id="stellar-energy-readout">框架完成后，可部署恒星接收器收集并转化能源。</div>
           <button class="project-action" id="stellar-project-button" disabled><span>◇</span><b>部署框架组件</b><small id="stellar-project-cost">完成「戴森框架」后可用</small></button>
         </section>
 

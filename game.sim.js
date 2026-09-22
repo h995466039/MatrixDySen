@@ -745,6 +745,7 @@ function rebuildPowerGrids() {
 
 function getPowerGeneration(building) {
   if (!isBuildingOperational(building)) return 0;
+  if (building.type === 'stellarReceiver' && (state.stellarProject?.progress || 0) < 100) return 0;
   const base = buildings[building.type]?.generation || 0;
   const careerMultiplier = activeCareerEffect('power') ? 1.2 : 1;
   const gridMultiplier = isTechUnlocked('power-grid-mk2') ? 1.25 : 1;
@@ -984,6 +985,23 @@ function simulateBuildings(dt) {
     item.progress = 1;
     return true;
   });
+  simulateStellarEnergy(dt);
+}
+
+function simulateStellarEnergy(dt) {
+  const project = state.stellarProject;
+  if (!project) return;
+  project.energyRate = 0;
+  if (project.progress < 100) return;
+  const rate = state.buildings.reduce((total, building) => {
+    if (building.type !== 'stellarReceiver' || !isBuildingOperational(building)) return total;
+    const grid = getGridPowerState(building);
+    if (!grid.grid || grid.grid.blackout) return total;
+    return total + getPowerGeneration(building) * grid.efficiency;
+  }, 0);
+  project.energyRate = rate;
+  project.energyStored = Math.max(0, (project.energyStored || 0) + rate * dt);
+  project.energyCollected = Math.max(0, (project.energyCollected || 0) + rate * dt);
 }
 
 function simulateResearch(dt) {
@@ -1015,6 +1033,56 @@ function isInterstellarUnlocked() {
   return isTechUnlocked('interstellar-logistics');
 }
 
+function switchActivePlanet(planetId) {
+  const target = planetById[planetId];
+  if (!target) return false;
+  if (planetId === state.activePlanet) {
+    showToast(`当前已在${target.name}`);
+    return true;
+  }
+  if (state.interstellar.route) {
+    showToast('货运舱航行中，抵达后才能切换星球', 'warning');
+    return false;
+  }
+  if (target.id !== 'home' && !state.interstellar.visits[target.id]) {
+    showToast('完成一次往返航次后，才能降落这颗星球', 'warning');
+    return false;
+  }
+  if (target.requires.some(requirement => !isTechUnlocked(requirement))) {
+    showToast(`需要接入「${techById[target.requires[0]]?.label || '对应信标'}」`, 'warning');
+    return false;
+  }
+
+  snapshotCurrentPlanet();
+  state.activePlanet = planetId;
+  const snapshot = makePlanetSnapshot(planetId, state.planetSnapshots?.[planetId]);
+  state.planetSnapshots[planetId] = snapshot;
+  state.buildings = snapshot.buildings;
+  state.belts = snapshot.belts;
+  state.nodes = snapshot.nodes;
+  const beltIds = new Set(state.belts.map(belt => belt.id));
+  state.items = snapshot.items.filter(item => item && item.beltId && beltIds.has(item.beltId)).map(item => ({ ...item }));
+  state.selectedId = null;
+  state.selectedBeltId = null;
+  state.pointer.cell = null;
+  state.pointer.startCell = null;
+  state.pointer.startBuildingId = null;
+  state.pointer.sorterAnchor = null;
+  state.camera = { x: 0, y: 1 };
+  state.production = { second: -1, current: {}, history: [] };
+  state.powerGrids = [];
+  state.powerSummary = { gridCount: 0, highLoadCount: 0, blackoutCount: 0, generation: 0, load: 0 };
+  terrainLayerSignature = '';
+  rebuildPowerGrids();
+  saveGame();
+  const mapPanel = query('#star-map-panel');
+  if (mapPanel) mapPanel.hidden = true;
+  updateHUD();
+  render();
+  showToast(`已进入${target.name} · 本地工厂已载入`);
+  return true;
+}
+
 function routeTarget() {
   const route = state.interstellar.route;
   return route ? planetById[route.targetId] : null;
@@ -1036,6 +1104,7 @@ function cargoOptions() {
 function launchRoute() {
   const target = planetById[state.interstellar.selectedPlanet];
   if (!isInterstellarUnlocked()) { showToast('需要完成「星际物流」', 'warning'); return; }
+  if (state.activePlanet !== 'home') { showToast('请先返回母星，再派遣货运舱', 'warning'); return; }
   if (!target || target.id === 'home') { showToast('请选择一个远端星球', 'warning'); return; }
   if (state.interstellar.route) { showToast('当前已有货运舱在航线上', 'warning'); return; }
   if (!hasTechPrerequisites({ requires: target.requires })) { showToast('该星球的信标尚未接入', 'warning'); return; }
@@ -1073,7 +1142,7 @@ function simulateInterstellar(dt) {
   addFlightLog(`航次完成 ← ${target.name} · ${resources[reward.resource].label} ×${reward.amount}`);
   state.interstellar.route = null;
   saveGame();
-  showToast(`异星资源已回收 · ${resources[reward.resource].label} ×${reward.amount}`);
+  showToast(`异星资源已回收 · ${resources[reward.resource].label} ×${reward.amount} · 已开放降落`);
 }
 
 const stellarModuleCost = { structureCube: 4, titanium: 2, processor: 1 };

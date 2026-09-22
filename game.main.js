@@ -26,6 +26,8 @@ query('#reset-button').addEventListener('click', () => {
   state.research = { current: null, progress: 0 };
   state.interstellar = makeInterstellarState();
   state.stellarProject = makeStellarProject();
+  state.activePlanet = 'home';
+  state.planetSnapshots = {};
   state.career = null;
   state.careerChosen = false;
   state.pendingCareer = 'logistics';
@@ -271,7 +273,7 @@ canvas.addEventListener('wheel', event => {
   if (oldZoom !== state.zoom) showToast(`视野缩放 · ${Math.round(state.zoom * 100)}%`);
 }, { passive: false });
 
-const toolHotkeys = { q: 'sorter', e: 'solidStorage', f: 'researchLab', g: 'wind', h: 'thermal', j: 'gasTurbine', z: 'workbench', x: 'oilExtractor', v: 'gasExtractor', y: 'liquidStorage', u: 'gasStorage', i: 'logisticsStation' };
+const toolHotkeys = { q: 'sorter', e: 'solidStorage', f: 'researchLab', g: 'wind', h: 'thermal', j: 'gasTurbine', k: 'stellarReceiver', z: 'workbench', x: 'oilExtractor', v: 'gasExtractor', y: 'liquidStorage', u: 'gasStorage', i: 'logisticsStation' };
 
 document.addEventListener('keydown', event => {
   if (event.target.tagName === 'INPUT') return;

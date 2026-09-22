@@ -15,6 +15,12 @@ function updateStellarProjectUI() {
   query('#stellar-project-fill').style.width = `${progress}%`;
   query('#stellar-project-progress').textContent = `${progress} / 100 · ${state.stellarProject.modules} 个组件`;
   query('#stellar-project-supply').textContent = formatCost(stellarModuleCost);
+  const energyReadout = query('#stellar-energy-readout');
+  if (energyReadout) {
+    energyReadout.textContent = !complete
+      ? '框架完成后，可部署恒星接收器收集并转化能源。'
+      : `恒星储能 ${formatNumber(Math.floor(state.stellarProject.energyStored || 0))} · 接收速率 ${(state.stellarProject.energyRate || 0).toFixed(1)} / 秒`;
+  }
   const button = query('#stellar-project-button');
   button.disabled = !unlocked || complete || !canAffordStorage(stellarModuleCost);
   query('#stellar-project-cost').textContent = !unlocked ? '完成「戴森框架」后可用' : complete ? '恒星工程阶段完成' : button.disabled ? `材料不足 · ${formatCost(stellarModuleCost)}` : `消耗 ${formatCost(stellarModuleCost)}`;
@@ -70,6 +76,7 @@ function updateStarMapUI() {
   if (!panel) return;
   const unlocked = isInterstellarUnlocked();
   const target = planetById[state.interstellar.selectedPlanet] || planetById.home;
+  const activePlanet = planetById[state.activePlanet] || planetById.home;
   const route = state.interstellar.route;
   const activeTarget = routeTarget();
   const cargo = cargoOptions().find(option => option.resource === state.interstellar.cargo) || cargoOptions()[0];
@@ -82,10 +89,19 @@ function updateStarMapUI() {
     button.classList.toggle('locked', locked);
     button.classList.toggle('in-flight', route?.targetId === planet.id);
     button.classList.toggle('visited', Boolean(state.interstellar.visits[planet.id]));
+    button.classList.toggle('current-planet', planet.id === activePlanet.id);
     const markerMeta = button.querySelector('small');
-    if (markerMeta) markerMeta.textContent = locked ? '信标未接入' : state.interstellar.visits[planet.id] ? `${planet.role} · ${state.interstellar.visits[planet.id]} 航次` : planet.role;
+    if (markerMeta) markerMeta.textContent = locked
+      ? '信标未接入'
+      : planet.id === activePlanet.id
+        ? '当前工厂'
+        : state.interstellar.visits[planet.id]
+          ? `${planet.role} · ${state.interstellar.visits[planet.id]} 航次`
+          : planet.role;
   });
   query('#map-button-state').textContent = route ? '航线中' : unlocked ? '已接入' : '未接入';
+  const worldName = query('#world-name');
+  if (worldName) worldName.textContent = activePlanet.name;
   query('#planet-dock-kicker').textContent = target.kicker;
   query('#planet-dock-name').textContent = target.name;
   query('#planet-dock-description').textContent = target.description;
@@ -119,8 +135,30 @@ function updateStarMapUI() {
   }
   const launch = query('#launch-route-button');
   const cargoAvailable = storageAmount(cargo.resource) >= cargo.amount;
-  launch.disabled = !unlocked || target.id === 'home' || Boolean(route) || !cargoAvailable || target.requires.some(requirement => !isTechUnlocked(requirement));
-  query('#launch-route-cost').textContent = !unlocked ? '完成「星际物流」后可用' : route ? '当前货运舱完成后可再次派遣' : `${resources[cargo.resource].label} ×${cargo.amount} · 往返 ${target.travelTime || 0} 秒`;
+  launch.disabled = !unlocked || activePlanet.id !== 'home' || target.id === 'home' || Boolean(route) || !cargoAvailable || target.requires.some(requirement => !isTechUnlocked(requirement));
+  query('#launch-route-cost').textContent = activePlanet.id !== 'home'
+    ? '返回母星后才能派遣'
+    : !unlocked
+      ? '完成「星际物流」后可用'
+      : route
+        ? '当前货运舱完成后可再次派遣'
+        : `${resources[cargo.resource].label} ×${cargo.amount} · 往返 ${target.travelTime || 0} 秒`;
+  const landButton = query('#planet-land-button');
+  const landLabel = query('#planet-land-label');
+  const landNote = query('#planet-land-note');
+  const targetVisited = target.id === 'home' || Boolean(state.interstellar.visits[target.id]);
+  const landingLocked = target.id !== 'home' && !targetVisited;
+  landButton.disabled = Boolean(route) || !unlocked || landingLocked || target.id === activePlanet.id;
+  if (target.id === activePlanet.id) {
+    landLabel.textContent = '当前星球';
+    landNote.textContent = `${activePlanet.name} 工厂运行中`;
+  } else if (target.id === 'home') {
+    landLabel.textContent = '返回母星';
+    landNote.textContent = route ? '货运舱航行中' : '回到晨星-03主工厂';
+  } else {
+    landLabel.textContent = '进入星球';
+    landNote.textContent = landingLocked ? '完成一次往返航次后开放' : `载入 ${target.name} 的本地工厂`;
+  }
   const log = query('#route-log');
   log.innerHTML = state.interstellar.log.length
     ? state.interstellar.log.slice().reverse().map(entry => `<div class="route-log-entry"><span class="route-log-dot"></span><span>${entry.message}</span></div>`).join('')
@@ -134,6 +172,10 @@ function renderStarMap() {
     state.interstellar.selectedPlanet = button.dataset.planet;
     updateStarMapUI();
   });
+  query('#planet-land-button').onclick = () => {
+    switchActivePlanet(state.interstellar.selectedPlanet);
+    updateStarMapUI();
+  };
   renderCargoOptions();
   updateStarMapUI();
 }
@@ -1186,6 +1228,9 @@ function updateHUD() {
   const minutes = Math.floor(state.time / 60) % 60;
   const day = Math.floor(state.time / 86400) + 1;
   query('#game-clock').textContent = `DAY ${String(day).padStart(3, '0')} · ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  const activePlanet = planetById[state.activePlanet] || planetById.home;
+  const worldName = query('#world-name');
+  if (worldName) worldName.textContent = activePlanet.name;
   query('#career-label').textContent = careerLabel();
   query('#career-button img').src = `godot_game/assets/generated/${state.career ? activeCareer().image : careerCatalog.logistics.image}`;
   query('#count-iron').textContent = formatNumber((state.inventory.iron || 0) + storageAmount('iron'));
