@@ -62,6 +62,24 @@ Object.entries(assetPaths).forEach(([key, path]) => {
   assets[key] = image;
 });
 
+const rasterCache = new WeakMap();
+const nodeLabelCache = new WeakMap();
+function rasterizedAsset(key) {
+  const image = assets[key];
+  if (!image || !image.complete || image.naturalWidth <= 0) return null;
+  const source = image.currentSrc || image.src || '';
+  if (!/\.svg($|[?#])/i.test(source)) return image;
+  let raster = rasterCache.get(image);
+  if (!raster) {
+    raster = document.createElement('canvas');
+    raster.width = 96;
+    raster.height = 96;
+    raster.getContext('2d').drawImage(image, 0, 0, 96, 96);
+    rasterCache.set(image, raster);
+  }
+  return raster;
+}
+
 function imageLoadState(image) {
   return hasImage(image) ? 'loaded' : 'fallback';
 }
@@ -577,6 +595,7 @@ function readSave() {
       belts: Array.isArray(saved.belts) ? saved.belts : [],
       inventory: { ...startingInventory, ...(saved.inventory || {}) },
       kits: { ...startingKits, ...(saved.kits || {}) },
+      items: (Array.isArray(saved.items) ? saved.items : []).filter(item => item && item.beltId && item.resource),
       nodes: savedNodes,
       time: Number.isFinite(saved.time) ? saved.time : 6 * 3600,
       tech: Array.isArray(saved.tech) && saved.tech.length ? [...new Set(['foundation', ...saved.tech])] : [...startingTech],
@@ -631,6 +650,16 @@ const state = {
   sorterRoutingSignature: '',
   assetFallbacks: 0
 };
+{
+  const savedBeltIds = new Set(state.belts.map(belt => belt.id));
+  state.items = (saved?.items || []).filter(item => item && item.beltId && item.resource && savedBeltIds.has(item.beltId)).map(item => ({
+    id: item.id || `item-${Math.random().toString(36).slice(2, 7)}`,
+    beltId: item.beltId,
+    sourceId: item.sourceId || null,
+    resource: item.resource,
+    progress: Math.min(1, Math.max(0, Number(item.progress) || 0))
+  }));
+}
 function query(selector) { return document.querySelector(selector); }
 function all(selector) { return [...document.querySelectorAll(selector)]; }
 function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
@@ -678,12 +707,18 @@ function activeCareer() {
   return careerCatalog[state.career] || careerCatalog.logistics;
 }
 
+function activeCareerEffect(effect) {
+  return Boolean(state.career) && activeCareer().effect === effect;
+}
+
 function careerLabel() {
   return state.career ? activeCareer().label : '选择职业';
 }
 
+let saveFailureNotified = false;
 function saveGame() {
   if (qaDemoMode || qaPlaythroughMode) return;
+  try {
   localStorage.setItem(SAVE_KEY, JSON.stringify({
     buildings: state.buildings,
     belts: state.belts,
@@ -696,8 +731,16 @@ function saveGame() {
     interstellar: state.interstellar,
     stellarProject: state.stellarProject,
     career: state.career || 'logistics',
-    careerChosen: state.careerChosen
+    careerChosen: state.careerChosen,
+    items: state.items.map(item => ({ id: item.id, beltId: item.beltId, sourceId: item.sourceId, resource: item.resource, progress: item.progress }))
   }));
+  } catch (error) {
+    if (!saveFailureNotified) {
+      saveFailureNotified = true;
+      showToast('存档写入失败 · 请清理浏览器存储空间后重试', 'warning');
+    }
+    console.error('saveGame 写入失败，本次进度未保存:', error);
+  }
 }
 
 function resize() {
@@ -734,7 +777,7 @@ function roundedRect(context, x, y, width, height, radius) {
   context.closePath();
 }
 
-function drawTerrainTile(terrain, point, size, parity, gridX, gridY) {
+function drawTerrainTile(terrain, point, size, parity, gridX, gridY, target = ctx) {
   const base = terrain.kind === 'rock'
     ? (parity ? 'rgba(61,79,91,.58)' : 'rgba(54,71,84,.58)')
     : terrain.kind === 'water'
@@ -742,98 +785,110 @@ function drawTerrainTile(terrain, point, size, parity, gridX, gridY) {
       : terrain.kind === 'void'
         ? 'rgba(4,12,21,.86)'
         : (parity ? 'rgba(18,42,54,.45)' : 'rgba(14,35,47,.45)');
-  ctx.fillStyle = base;
-  ctx.fillRect(point.x, point.y, size + 1, size + 1);
+  target.fillStyle = base;
+  target.fillRect(point.x, point.y, size + 1, size + 1);
 
   const terrainTile = terrain.kind === 'water' ? assets.waterTile : terrain.kind === 'rock' ? assets.rockTile : assets.groundTile;
   if (terrain.kind !== 'void' && hasImage(terrainTile)) {
-    ctx.save();
-    ctx.globalAlpha = terrain.kind === 'water' ? .86 : terrain.kind === 'rock' ? .48 : .18;
-    ctx.beginPath();
-    ctx.rect(point.x, point.y, size + 1, size + 1);
-    ctx.clip();
+    target.save();
+    target.globalAlpha = terrain.kind === 'water' ? .86 : terrain.kind === 'rock' ? .48 : .18;
+    target.beginPath();
+    target.rect(point.x, point.y, size + 1, size + 1);
+    target.clip();
     const sourceSize = 48;
     const sourceX = ((gridX * sourceSize) % terrainTile.width + terrainTile.width) % terrainTile.width;
     const sourceY = ((gridY * sourceSize) % terrainTile.height + terrainTile.height) % terrainTile.height;
-    ctx.drawImage(terrainTile, sourceX, sourceY, sourceSize, sourceSize, point.x, point.y, size, size);
-    ctx.restore();
+    target.drawImage(terrainTile, sourceX, sourceY, sourceSize, sourceSize, point.x, point.y, size, size);
+    target.restore();
   }
 
   if (terrain.kind === 'water') {
-    ctx.save();
-      ctx.strokeStyle = 'rgba(142,236,235,.28)';
-    ctx.lineWidth = Math.max(1, state.zoom * .8);
+    target.save();
+      target.strokeStyle = 'rgba(142,236,235,.28)';
+    target.lineWidth = Math.max(1, state.zoom * .8);
     [.28, .56, .78].forEach((offset, index) => {
       const waveY = point.y + size * offset;
-      ctx.beginPath();
-      ctx.moveTo(point.x + size * (.12 + (index % 2) * .08), waveY);
-      ctx.quadraticCurveTo(point.x + size * .34, waveY - size * .06, point.x + size * .5, waveY);
-      ctx.quadraticCurveTo(point.x + size * .66, waveY + size * .06, point.x + size * .88, waveY);
-      ctx.stroke();
+      target.beginPath();
+      target.moveTo(point.x + size * (.12 + (index % 2) * .08), waveY);
+      target.quadraticCurveTo(point.x + size * .34, waveY - size * .06, point.x + size * .5, waveY);
+      target.quadraticCurveTo(point.x + size * .66, waveY + size * .06, point.x + size * .88, waveY);
+      target.stroke();
     });
-    ctx.restore();
+    target.restore();
   } else if (terrain.kind === 'rock') {
-    ctx.save();
-    ctx.strokeStyle = 'rgba(183,204,207,.34)';
-    ctx.fillStyle = 'rgba(183,204,207,.13)';
-    ctx.lineWidth = Math.max(1, state.zoom * .8);
-    ctx.beginPath();
-    ctx.moveTo(point.x + size * .18, point.y + size * .7);
-    ctx.lineTo(point.x + size * .34, point.y + size * .36);
-    ctx.lineTo(point.x + size * .55, point.y + size * .54);
-    ctx.lineTo(point.x + size * .77, point.y + size * .24);
-    ctx.lineTo(point.x + size * .86, point.y + size * .76);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    ctx.restore();
+    target.save();
+    target.strokeStyle = 'rgba(183,204,207,.34)';
+    target.fillStyle = 'rgba(183,204,207,.13)';
+    target.lineWidth = Math.max(1, state.zoom * .8);
+    target.beginPath();
+    target.moveTo(point.x + size * .18, point.y + size * .7);
+    target.lineTo(point.x + size * .34, point.y + size * .36);
+    target.lineTo(point.x + size * .55, point.y + size * .54);
+    target.lineTo(point.x + size * .77, point.y + size * .24);
+    target.lineTo(point.x + size * .86, point.y + size * .76);
+    target.closePath();
+    target.fill();
+    target.stroke();
+    target.restore();
   } else if (terrain.kind === 'plain') {
-    ctx.save();
-    ctx.strokeStyle = 'rgba(105,216,218,.08)';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(point.x + size * .16, point.y + size * .16, size * .68, size * .68);
-    ctx.restore();
+    target.save();
+    target.strokeStyle = 'rgba(105,216,218,.08)';
+    target.lineWidth = 1;
+    target.strokeRect(point.x + size * .16, point.y + size * .16, size * .68, size * .68);
+    target.restore();
   }
 }
 
+let terrainLayerCache = null;
+let terrainLayerSignature = '';
 function drawGround() {
   const { width, height } = state.viewport;
-  ctx.fillStyle = '#081522';
-  ctx.fillRect(0, 0, width, height);
-  if (hasImage(assets.groundTile)) {
-    const groundPattern = ctx.createPattern(assets.groundTile, 'repeat');
-    if (groundPattern) {
-      ctx.save();
-      ctx.globalAlpha = .16;
-      ctx.fillStyle = groundPattern;
-      ctx.fillRect(0, 0, width, height);
-      ctx.restore();
+  const tileSize = TILE * state.zoom;
+  const signature = `${width}|${height}|${state.camera.x}|${state.camera.y}|${state.zoom}|${state.tool === 'belt'}`;
+  if (signature !== terrainLayerSignature) {
+    terrainLayerSignature = signature;
+    if (!terrainLayerCache || terrainLayerCache.width !== width || terrainLayerCache.height !== height) {
+      terrainLayerCache = document.createElement('canvas');
+      terrainLayerCache.width = width;
+      terrainLayerCache.height = height;
+    }
+    const layer = terrainLayerCache.getContext('2d');
+    layer.setTransform(1, 0, 0, 1, 0, 0);
+    layer.clearRect(0, 0, width, height);
+    layer.fillStyle = '#081522';
+    layer.fillRect(0, 0, width, height);
+    if (hasImage(assets.groundTile)) {
+      const groundPattern = layer.createPattern(assets.groundTile, 'repeat');
+      if (groundPattern) {
+        layer.save();
+        layer.globalAlpha = .16;
+        layer.fillStyle = groundPattern;
+        layer.fillRect(0, 0, width, height);
+        layer.restore();
+      }
+    }
+    const minX = Math.floor(state.camera.x - width / (2 * tileSize)) - 2;
+    const maxX = Math.ceil(state.camera.x + width / (2 * tileSize)) + 2;
+    const minY = Math.floor(state.camera.y - height / (2 * tileSize)) - 2;
+    const maxY = Math.ceil(state.camera.y + height / (2 * tileSize)) + 2;
+    for (let x = minX; x <= maxX; x += 1) {
+      for (let y = minY; y <= maxY; y += 1) {
+        const point = worldToScreen(x, y);
+        drawTerrainTile(terrainAt({ x, y }), point, tileSize, Math.abs(x + y) % 2, x, y, layer);
+      }
+    }
+    layer.strokeStyle = state.tool === 'belt' ? 'rgba(105,216,218,.28)' : 'rgba(165,204,200,.1)';
+    layer.lineWidth = 1;
+    for (let x = minX; x <= maxX + 1; x += 1) {
+      const point = worldToScreen(x, minY);
+      layer.beginPath(); layer.moveTo(point.x, point.y); layer.lineTo(point.x, worldToScreen(x, maxY + 1).y); layer.stroke();
+    }
+    for (let y = minY; y <= maxY + 1; y += 1) {
+      const point = worldToScreen(minX, y);
+      layer.beginPath(); layer.moveTo(point.x, point.y); layer.lineTo(worldToScreen(maxX + 1, y).x, point.y); layer.stroke();
     }
   }
-
-  const minX = Math.floor(state.camera.x - width / (2 * TILE * state.zoom)) - 2;
-  const maxX = Math.ceil(state.camera.x + width / (2 * TILE * state.zoom)) + 2;
-  const minY = Math.floor(state.camera.y - height / (2 * TILE * state.zoom)) - 2;
-  const maxY = Math.ceil(state.camera.y + height / (2 * TILE * state.zoom)) + 2;
-  for (let x = minX; x <= maxX; x += 1) {
-    for (let y = minY; y <= maxY; y += 1) {
-      const point = worldToScreen(x, y);
-      const size = TILE * state.zoom;
-      drawTerrainTile(terrainAt({ x, y }), point, size, Math.abs(x + y) % 2, x, y);
-    }
-  }
-
-  ctx.strokeStyle = state.tool === 'belt' ? 'rgba(105,216,218,.28)' : 'rgba(165,204,200,.1)';
-  ctx.lineWidth = 1;
-  for (let x = minX; x <= maxX + 1; x += 1) {
-    const point = worldToScreen(x, minY);
-    ctx.beginPath(); ctx.moveTo(point.x, point.y); ctx.lineTo(point.x, worldToScreen(x, maxY + 1).y); ctx.stroke();
-  }
-  for (let y = minY; y <= maxY + 1; y += 1) {
-    const point = worldToScreen(minX, y);
-    ctx.beginPath(); ctx.moveTo(point.x, point.y); ctx.lineTo(worldToScreen(maxX + 1, y).x, point.y); ctx.stroke();
-  }
-
+  if (terrainLayerCache) ctx.drawImage(terrainLayerCache, 0, 0);
   for (let index = 0; index < 90; index += 1) {
     const x = ((index * 83) % Math.max(width, 1));
     const y = ((index * 47 + 31) % Math.max(height, 1));
@@ -844,7 +899,6 @@ function drawGround() {
     ctx.arc(x, y, radius, 0, Math.PI * 2);
     ctx.fill();
   }
-
 }
 
 function drawDysonConstruction() {
@@ -883,10 +937,11 @@ function drawResourceNode(node) {
   ctx.strokeStyle = `${meta.color}55`;
   ctx.lineWidth = 1;
   ctx.beginPath(); ctx.arc(point.x, point.y + size * .22, size * .46, 0, Math.PI * 2); ctx.stroke();
-  if (hasImage(assets[meta.image])) {
+  const nodeAsset = rasterizedAsset(meta.image);
+  if (nodeAsset) {
     const pulse = 1 + Math.sin(state.animTime * 1.8 + node.x * .7 + node.y) * .035;
     const imageSize = size * pulse;
-    ctx.drawImage(assets[meta.image], point.x - imageSize / 2, point.y - imageSize / 2, imageSize, imageSize);
+    ctx.drawImage(nodeAsset, point.x - imageSize / 2, point.y - imageSize / 2, imageSize, imageSize);
   } else {
     drawResourceGlyph(node.resource, point.x, point.y, size * .72, .92);
   }
@@ -894,7 +949,14 @@ function drawResourceNode(node) {
   roundedRect(ctx, point.x - 39, point.y + size * .44, 78, 18, 3); ctx.fill();
   ctx.fillStyle = meta.color;
   ctx.font = '700 9px Bahnschrift, sans-serif'; ctx.textAlign = 'center';
-  ctx.fillText(`${meta.label}矿脉  ${formatNumber(node.amount)}`, point.x, point.y + size * .44 + 12);
+  const cachedLabel = nodeLabelCache.get(node);
+  const labelText = cachedLabel && cachedLabel.amount === node.amount && cachedLabel.label === meta.label
+    ? cachedLabel.text
+    : `${meta.label}矿脉  ${formatNumber(node.amount)}`;
+  if (!cachedLabel || cachedLabel.amount !== node.amount || cachedLabel.label !== meta.label) {
+    nodeLabelCache.set(node, { amount: node.amount, label: meta.label, text: labelText });
+  }
+  ctx.fillText(labelText, point.x, point.y + size * .44 + 12);
   ctx.restore();
 }
 
@@ -1296,7 +1358,8 @@ function drawBuilding(building) {
     ctx.save();
     ctx.translate(size / 2, size / 2);
     ctx.scale(imageScale, imageScale);
-    ctx.drawImage(assets[meta.image], -size * .48, -size * .48, size * .96, size * .96);
+    const buildingSprite = rasterizedAsset(meta.image) || assets[meta.image];
+    ctx.drawImage(buildingSprite, -size * .48, -size * .48, size * .96, size * .96);
     if (active) {
       ctx.globalCompositeOperation = 'lighter';
       ctx.strokeStyle = `${meta.color}66`;
@@ -1515,7 +1578,8 @@ function drawSorterPreview() {
       ctx.strokeRect(ghostPoint.x + 2, ghostPoint.y + 2, size - 4, size - 4);
       if (hasImage(assets.sorter)) {
         ctx.globalAlpha = .26;
-        ctx.drawImage(assets.sorter, ghostPoint.x + size * .06, ghostPoint.y + size * .06, size * .88, size * .88);
+        const ghostSprite = rasterizedAsset('sorter') || assets.sorter;
+        ctx.drawImage(ghostSprite, ghostPoint.x + size * .06, ghostPoint.y + size * .06, size * .88, size * .88);
       }
       ctx.restore();
     }
@@ -1706,13 +1770,17 @@ function craftRecipe(id) {
   if (recipe.outputType === 'kit') state.kits[recipe.output] = kitCount(recipe.output) + recipe.amount;
   else state.inventory[recipe.output] = (state.inventory[recipe.output] || 0) + recipe.amount;
   saveGame();
-  showToast(`${recipe.outputLabel} 已加入建筑库存`);
+  showToast(`${recipe.outputLabel} 已加入建筑库存${storageHintFor(lastSpendFromStorage)}`);
   renderCraftPanel();
   updateHUD();
 }
 
+function totalAmount(resource) {
+  return (state.inventory[resource] || 0) + storageAmount(resource);
+}
+
 function canAfford(cost, multiplier = 1) {
-  return Object.entries(cost).every(([resource, amount]) => (state.inventory[resource] || 0) >= amount * multiplier);
+  return Object.entries(cost).every(([resource, amount]) => totalAmount(resource) >= amount * multiplier);
 }
 
 function canAffordStorage(cost, multiplier = 1) {
@@ -1723,8 +1791,24 @@ function takeStorageCost(cost, multiplier = 1) {
   Object.entries(cost).forEach(([resource, amount]) => takeFromStorage(resource, amount * multiplier));
 }
 
+let lastSpendFromStorage = [];
 function spend(cost, multiplier = 1) {
-  Object.entries(cost).forEach(([resource, amount]) => { state.inventory[resource] = (state.inventory[resource] || 0) - amount * multiplier; });
+  lastSpendFromStorage = [];
+  Object.entries(cost).forEach(([resource, amount]) => {
+    let remaining = amount * multiplier;
+    const fromInventory = Math.min(state.inventory[resource] || 0, remaining);
+    state.inventory[resource] = (state.inventory[resource] || 0) - fromInventory;
+    remaining -= fromInventory;
+    if (remaining <= 0) return;
+    const taken = takeFromStorage(resource, remaining);
+    if (taken > 0) lastSpendFromStorage.push(resource);
+  });
+}
+
+function storageHintFor(usedResources) {
+  if (!usedResources || !usedResources.length) return '';
+  const labels = [...new Set(usedResources)].map(resource => resources[resource]?.label || resource).join('、');
+  return ` · 已从物流仓储补充 ${labels}`;
 }
 
 function isTechUnlocked(id) {
@@ -1867,20 +1951,53 @@ function placeBelt(start, end, presetSegments = null) {
     };
   }));
   saveGame();
-  showToast(`传送带已铺设 · ${cells.length} 格`);
+  showToast(`传送带已铺设 · ${cells.length} 格${storageHintFor(lastSpendFromStorage)}`);
+}
+
+function salvageBuildingContents(building) {
+  if (!building) return 0;
+  let salvaged = 0;
+  const deposit = ([resource, amount]) => {
+    const count = Number(amount) || 0;
+    if (count <= 0) return;
+    state.inventory[resource] = (state.inventory[resource] || 0) + count;
+    salvaged += count;
+  };
+  Object.entries(building.stock || {}).forEach(deposit);
+  Object.entries(building.input || {}).forEach(deposit);
+  Object.entries(building.output || {}).forEach(deposit);
+  building.stock = {}; building.input = {}; building.output = {};
+  return salvaged;
 }
 
 function removeAt(cell) {
   const building = findBuildingAt(cell);
   if (building) {
+    if (isStorageType(building) && storageUsed(building) > 0 && state.confirmRemoveId !== building.id) {
+      state.confirmRemoveId = building.id;
+      showToast(`${buildings[building.type].label}内还有物资 · 再次点击确认拆除并回收`, 'warning');
+      return;
+    }
+    state.confirmRemoveId = null;
+    const nearbySorters = state.buildings.filter(entry => entry.type === 'sorter' && isAdjacentToBuilding({ x: entry.x, y: entry.y }, building));
+    const salvaged = salvageBuildingContents(building);
     state.buildings = state.buildings.filter(item => item.id !== building.id);
+    const orphanSorters = nearbySorters.filter(sorter => !sorterAttachedBuilding(sorter));
+    let orphanSalvaged = 0;
+    orphanSorters.forEach(sorter => {
+      orphanSalvaged += salvageBuildingContents(sorter);
+      state.buildings = state.buildings.filter(item => item.id !== sorter.id);
+    });
     const kitType = building.type === 'storage' ? 'solidStorage' : building.type;
     state.kits[kitType] = kitCount(kitType) + 1;
     state.selectedId = null;
     state.selectedBeltId = null;
     rebuildPowerGrids();
     saveGame();
-    showToast(`${buildings[building.type].label} 已回收`);
+    const notes = [];
+    if (salvaged > 0) notes.push(`回收货物 ${salvaged} 件`);
+    if (orphanSorters.length) notes.push(`连带回收分拣器 ${orphanSorters.length} 台${orphanSalvaged > 0 ? `（货物 ${orphanSalvaged} 件）` : ''}`);
+    showToast(`${buildings[building.type].label} 已回收${notes.length ? ` · ${notes.join(' · ')}` : ''}`);
     return;
   }
   const beltIndex = state.belts.findIndex(belt => beltCells(belt).some(entry => entry.x === cell.x && entry.y === cell.y));
@@ -1891,13 +2008,17 @@ function removeAt(cell) {
         if (beltId === belt.id) delete sorter.sorterRules[resource];
       });
     });
+    const inFlight = state.items.filter(item => item.beltId === belt.id);
+    inFlight.forEach(item => {
+      state.inventory[item.resource] = (state.inventory[item.resource] || 0) + 1;
+    });
     const kitCells = Math.max(0, belt.kitCells || 0);
     state.kits.belt += Math.floor(kitCells * .6);
     state.inventory.iron += Math.floor((belt.length - kitCells) * .6);
     state.selectedBeltId = null;
     state.items = state.items.filter(item => item.beltId !== belt.id);
     saveGame();
-    showToast('传送带已回收');
+    showToast(inFlight.length ? `传送带已回收 · 在途 ${inFlight.length} 件货物已转入随身库存` : '传送带已回收');
     return;
   }
   showToast('这里没有可拆除对象', 'warning');
@@ -2150,7 +2271,7 @@ function consumeRecipeInputs(input, recipe) {
 function getBeltTravelFactor() {
   const level = clamp(getBuildingLevel('belt'), 1, 5);
   const techFactor = [.4, .28, .21, .16, .12][level - 1];
-  return activeCareer().effect === 'beltSpeed' ? techFactor * .75 : techFactor;
+  return activeCareerEffect('beltSpeed') ? techFactor * .75 : techFactor;
 }
 
 function getMiningTime(building) {
@@ -2311,7 +2432,7 @@ function rebuildPowerGrids() {
 function getPowerGeneration(building) {
   if (!isBuildingOperational(building)) return 0;
   const base = buildings[building.type]?.generation || 0;
-  const careerMultiplier = activeCareer().effect === 'power' ? 1.2 : 1;
+  const careerMultiplier = activeCareerEffect('power') ? 1.2 : 1;
   const gridMultiplier = isTechUnlocked('power-grid-mk2') ? 1.25 : 1;
   return base * careerMultiplier * gridMultiplier;
 }
@@ -2349,7 +2470,7 @@ function techUpgradeText(tech) {
 }
 
 function getResearchSpeed() {
-  return activeCareer().effect === 'research' ? 1.3 : 1;
+  return activeCareerEffect('research') ? 1.3 : 1;
 }
 
 function simulateBuildings(dt) {
@@ -2384,7 +2505,7 @@ function simulateBuildings(dt) {
     if (building.type === 'smelter' && powerState.powered) {
       if (Object.values(building.output).reduce((sum, amount) => sum + amount, 0) >= outputCapacity(building)) return;
       const raw = building.recipeResource || ['copper', 'iron', 'silicon'].find(resource => (building.input[resource] || 0) > 0);
-      if (!raw) return;
+      if (!raw || (building.input[raw] || 0) <= 0) return;
       building.process += dt * efficiency;
       if (building.process >= getSmeltingTime()) {
         building.process = 0;
@@ -2468,11 +2589,16 @@ function simulateBuildings(dt) {
     if (nextBelt) {
       item.beltId = nextBelt.id;
       item.progress = 0;
-    } else {
-      // Keep a single cargo unit parked at the terminal. It will be retried on
-      // the next tick after the destination consumes space.
-      item.progress = 1;
+      return true;
     }
+    // 终端滞留：重试 40 秒后仍未消化，回收为随身货物，释放阻塞点
+    item._stalled = (item._stalled || 0) + dt;
+    if (item._stalled >= 40) {
+      state.inventory[item.resource] = (state.inventory[item.resource] || 0) + 1;
+      showToast(`终端货物回收 · ${resources[item.resource]?.label || item.resource} ×1 已转入随身库存`, 'warning');
+      return false;
+    }
+    item.progress = 1;
     return true;
   });
 }
@@ -2904,7 +3030,8 @@ function drawItems() {
     ctx.fillStyle = color;
     ctx.shadowColor = color; ctx.shadowBlur = 10;
     if (hasImage(assets[meta.image])) {
-      ctx.drawImage(assets[meta.image], point.x - itemSize / 2, point.y - itemSize / 2, itemSize, itemSize);
+      const itemSprite = rasterizedAsset(meta.image) || assets[meta.image];
+      ctx.drawImage(itemSprite, point.x - itemSize / 2, point.y - itemSize / 2, itemSize, itemSize);
     } else {
       drawResourceGlyph(item.resource, point.x, point.y, itemSize, .95);
     }
@@ -3071,7 +3198,8 @@ function drawPreview() {
     ctx.globalAlpha = .28;
     ctx.translate(point.x + size / 2, point.y + size / 2);
     ctx.rotate((state.rotation * Math.PI) / 180);
-    ctx.drawImage(assets[meta.image], -size * .44, -size * .44, size * .88, size * .88);
+    const dockSprite = rasterizedAsset(meta.image) || assets[meta.image];
+    ctx.drawImage(dockSprite, -size * .44, -size * .44, size * .88, size * .88);
     ctx.restore();
   }
 }
@@ -3274,7 +3402,13 @@ function buildingStatus(building) {
     if (!target) return '未连接建筑';
     const beltCount = building.sorterMode === 'output' ? sorterOutputBelts(building).length : sorterInputBelts(building).length;
     if (!beltCount) return '未连接传送带';
-    return building.sorterMode === 'output' ? '等待取货' : building.process > .05 ? '取放中' : '等待来料';
+    if (building.sorterMode === 'output') {
+      const outBelts = sorterOutputBelts(building);
+      const buffered = outBelts.reduce((sum, belt) => sum + state.items.filter(item => item.beltId === belt.id).length, 0);
+      const beltCapacity = outBelts.reduce((sum, belt) => sum + Math.max(1, belt.length), 0);
+      return buffered >= beltCapacity ? '出料受阻' : '等待取货';
+    }
+    return building.process > .05 ? '取放中' : '等待来料';
   }
   if (isStorageType(building)) {
     if (storageUsed(building) >= storageCapacity(building)) return '仓储已满';
@@ -3288,7 +3422,7 @@ function buildingStatus(building) {
     return building.timer > .05 ? '采掘中' : '等待脉冲';
   }
   if (building.type === 'researchLab' && !researchTarget()) return '待选择科技';
-  if (Object.values(building.output).some(amount => amount > 0)) return '输出堵塞';
+  if (Object.values(building.output).reduce((sum, amount) => sum + amount, 0) >= outputCapacity(building)) return '输出堵塞';
   if (building.process > .05) return building.type === 'researchLab' ? '制备矩阵' : '生产中';
   if (Object.values(building.input).some(amount => amount > 0)) return '等待加工';
   return building.type === 'researchLab' ? '等待矩阵组件' : '缺少输入';
@@ -3720,7 +3854,7 @@ function toggleCareerPanel(force) {
 function renderCraftPanel() {
   const host = query('#craft-recipes');
   if (!host) return;
-  const materialSummary = ['iron', 'copper', 'silicon'].map(resource => `${resources[resource].label} ${formatNumber(state.inventory[resource] || 0)}`).join(' · ');
+  const materialSummary = ['iron', 'copper', 'silicon'].map(resource => `${resources[resource].label} ${formatNumber(totalAmount(resource))}`).join(' · ');
   const kitSummary = handcraftRecipes
     .filter(recipe => recipe.outputType === 'kit' && kitCount(recipe.output) > 0)
     .map(recipe => `${recipe.label} ${kitCount(recipe.output)}`)
@@ -3755,7 +3889,8 @@ function toggleCraftPanel(force) {
 function updateHUD() {
   const hours = Math.floor(state.time / 3600) % 24;
   const minutes = Math.floor(state.time / 60) % 60;
-  query('#game-clock').textContent = `DAY 001 · ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  const day = Math.floor(state.time / 86400) + 1;
+  query('#game-clock').textContent = `DAY ${String(day).padStart(3, '0')} · ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
   query('#career-label').textContent = careerLabel();
   query('#career-button img').src = `godot_game/assets/generated/${state.career ? activeCareer().image : careerCatalog.logistics.image}`;
   query('#count-iron').textContent = formatNumber((state.inventory.iron || 0) + storageAmount('iron'));
@@ -4497,6 +4632,49 @@ function runQaPlaythrough() {
   state.selectedId = null;
   state.selectedBeltId = null;
   simulateBuildings(.01);
+  // —— 扩展回归（Hermes 移植）：拆除回收 / 在途货物 / 仓储补料 / 堵塞判定 ——
+  const qaPortStorage = makeBuilding('storage', 40, 40);
+  qaPortStorage.stock = { copperIngot: 3 };
+  state.buildings.push(qaPortStorage);
+  const qaPortKitBefore = kitCount('solidStorage');
+  removeAt({ x: 40, y: 40 });
+  check(state.buildings.some(building => building.id === qaPortStorage.id), '拆除仓储时未进行二次确认保护');
+  removeAt({ x: 40, y: 40 });
+  check(!state.buildings.some(building => building.id === qaPortStorage.id), '二次确认后仓储仍未拆除');
+  check((state.inventory.copperIngot || 0) >= 3, '拆除仓储时库存未回收');
+  check(kitCount('solidStorage') === qaPortKitBefore + 1, '拆除仓储未回收储存套件');
+  const qaPortSmelter = makeBuilding('smelter', 42, 42);
+  qaPortSmelter.input = { iron: 2 };
+  qaPortSmelter.output = { ironIngot: 2 };
+  state.buildings.push(qaPortSmelter);
+  const qaPortKitBefore2 = kitCount('smelter');
+  const qaPortIngotBefore = state.inventory.ironIngot || 0;
+  removeAt({ x: 42, y: 42 });
+  check(kitCount('smelter') === qaPortKitBefore2 + 1, '拆除冶炼机未回收建筑套件');
+  check((state.inventory.ironIngot || 0) >= qaPortIngotBefore + 2, '拆除冶炼机时产出未回收');
+  const qaPortBelt = { x: 44, y: 44, dx: 1, dy: 0, length: 2, kitCells: 2, id: 'qa-port-belt' };
+  state.belts.push(qaPortBelt);
+  state.items.push({ id: 'qa-port-item', beltId: 'qa-port-belt', sourceId: null, resource: 'copper', progress: .5 });
+  const qaPortCopperBefore = state.inventory.copper || 0;
+  removeAt({ x: 44, y: 44 });
+  check(!state.belts.some(belt => belt.id === 'qa-port-belt'), '传送带未拆除');
+  check((state.inventory.copper || 0) === qaPortCopperBefore + 1, '拆除传送带时在途货物未回收');
+  state.inventory.titanium = 0;
+  const qaPortRefill = makeBuilding('storage', 46, 46);
+  qaPortRefill.stock = { titanium: 12 };
+  state.buildings.push(qaPortRefill);
+  const qaPortTitaniumBefore = storageAmount('titanium');
+  check(canAfford({ titanium: 10 }), '随身材料不足时未采用仓储库存判定');
+  spend({ titanium: 10 });
+  check((state.inventory.titanium || 0) === 0 && storageAmount('titanium') === qaPortTitaniumBefore - 10, '仓储补料扣减不正确');
+  state.buildings = state.buildings.filter(building => building.id !== qaPortRefill.id);
+  const qaPortCongestion = makeBuilding('smelter', 48, 48);
+  qaPortCongestion.output = { ironIngot: 1 };
+  check(buildingStatus(qaPortCongestion) !== '输出堵塞', '冶炼机仅 1 件产物即误报输出堵塞');
+  qaPortCongestion.output = { ironIngot: outputCapacity(qaPortCongestion) };
+  check(buildingStatus(qaPortCongestion) === '输出堵塞', '产物达到容量上限后未标记输出堵塞');
+  state.buildings = state.buildings.filter(building => building.id !== qaPortCongestion.id);
+  state.confirmRemoveId = null;
   const passed = failures.length === 0;
   const report = passed
     ? 'QA PASS · 矿机→冶炼→矩阵生产 → 全设施授权/升级 → 分拣分流 → 星际去返 → 恒星工程 100%'
@@ -4554,7 +4732,15 @@ query('#stellar-project-button').addEventListener('click', contributeStellarProj
 query('#objective-action').addEventListener('click', () => runDiagnosticAction());
 query('#monitor-advice-action').addEventListener('click', () => runDiagnosticAction());
 query('#research-diagnostic-action').addEventListener('click', () => runDiagnosticAction());
+let resetConfirmAt = 0;
 query('#reset-button').addEventListener('click', () => {
+  const pressedAt = performance.now();
+  if (pressedAt - resetConfirmAt > 3000) {
+    resetConfirmAt = pressedAt;
+    showToast('再次点击「重置工厂」以确认清空全部进度', 'warning');
+    return;
+  }
+  resetConfirmAt = 0;
   const storage = makeBuilding('storage', 3, -1);
   storage.baseHub = true;
   storage.stock = { ...startingStorageStock };
@@ -4753,11 +4939,11 @@ canvas.addEventListener('pointerleave', () => { if (!state.pointer.down) state.p
 canvas.addEventListener('wheel', event => {
   event.preventDefault();
   const oldZoom = state.zoom;
-  state.zoom = clamp(state.zoom * (event.deltaY < 0 ? 1.1 : .9), .55, 1.65);
-  const rect = canvas.getBoundingClientRect();
   const before = screenToCell(event.clientX, event.clientY);
-  state.camera.x += before.x - ((event.clientX - rect.left - state.viewport.width / 2) / (TILE * state.zoom) + state.camera.x);
-  state.camera.y += before.y - ((event.clientY - rect.top - state.viewport.height / 2) / (TILE * state.zoom) + state.camera.y);
+  state.zoom = clamp(oldZoom * (event.deltaY < 0 ? 1.1 : .9), .55, 1.65);
+  const after = screenToCell(event.clientX, event.clientY);
+  state.camera.x += before.x - after.x;
+  state.camera.y += before.y - after.y;
   if (oldZoom !== state.zoom) showToast(`视野缩放 · ${Math.round(state.zoom * 100)}%`);
 }, { passive: false });
 
@@ -4793,19 +4979,31 @@ document.addEventListener('keydown', event => {
 
 let lastFrame = performance.now();
 let autosaveTime = 0;
+let hudTimer = 0;
 let gameStarted = false;
+let loopBroken = false;
 function loop(now) {
-  const dt = Math.min(.08, (now - lastFrame) / 1000);
-  lastFrame = now;
-  state.animTime = now / 1000;
-  const simDt = dt * state.simulationSpeed;
-  if (!state.paused) { state.time += simDt * 7; simulateBuildings(simDt); simulateResearch(simDt); simulateInterstellar(simDt); }
-  autosaveTime += dt;
-  if (autosaveTime >= 2) { autosaveTime = 0; saveGame(); }
-  updateHUD();
-  render();
-  requestAnimationFrame(loop);
+  let dt;
+  try {
+    dt = Math.min(.08, (now - lastFrame) / 1000);
+    lastFrame = now;
+    state.animTime = now / 1000;
+    const simDt = dt * state.simulationSpeed;
+    if (!state.paused) { state.time += simDt * 7; simulateBuildings(simDt); simulateResearch(simDt); simulateInterstellar(simDt); }
+    autosaveTime += dt;
+    if (autosaveTime >= 2) { autosaveTime = 0; saveGame(); }
+    hudTimer += dt;
+    if (hudTimer >= .12) { hudTimer = 0; updateHUD(); }
+    if (!query('#star-map-panel').hidden) updateRouteVisual();
+  } catch (error) {
+    if (!loopBroken) { loopBroken = true; console.error('主循环异常，已隔离本次帧:', error); }
+  } finally {
+    try { render(); } catch (error) { if (!loopBroken) { loopBroken = true; console.error('渲染异常，已隔离本次帧:', error); } }
+    requestAnimationFrame(loop);
+  }
 }
+window.addEventListener('pagehide', () => saveGame());
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveGame(); });
 
 function initializeGame() {
   if (gameStarted) return;
