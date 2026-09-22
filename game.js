@@ -554,6 +554,10 @@ function careerLabel() {
   return state.career ? activeCareer().label : '选择职业';
 }
 
+function activeCareerEffect() {
+  return state.career ? activeCareer().effect : null;
+}
+
 let saveFailureNotified = false;
 function saveGame() {
   if (qaDemoMode || qaPlaythroughMode) return;
@@ -677,7 +681,23 @@ function drawTerrainTile(terrain, point, size, parity, gridX, gridY) {
   }
 }
 
-function drawGround() {
+const terrainLayerCache = { key: '', canvas: document.createElement('canvas') };
+
+function terrainLayerKey() {
+  return `${state.camera.x}|${state.camera.y}|${state.zoom}|${state.viewport.width}x${state.viewport.height}|${canvas.width}x${canvas.height}|${hasImage(assets.groundTile) ? 1 : 0}${hasImage(assets.rockTile) ? 1 : 0}${hasImage(assets.waterTile) ? 1 : 0}`;
+}
+
+function visibleGroundBounds() {
+  const { width, height } = state.viewport;
+  return {
+    minX: Math.floor(state.camera.x - width / (2 * TILE * state.zoom)) - 2,
+    maxX: Math.ceil(state.camera.x + width / (2 * TILE * state.zoom)) + 2,
+    minY: Math.floor(state.camera.y - height / (2 * TILE * state.zoom)) - 2,
+    maxY: Math.ceil(state.camera.y + height / (2 * TILE * state.zoom)) + 2
+  };
+}
+
+function paintTerrainLayer() {
   const { width, height } = state.viewport;
   ctx.fillStyle = '#081522';
   ctx.fillRect(0, 0, width, height);
@@ -692,10 +712,7 @@ function drawGround() {
     }
   }
 
-  const minX = Math.floor(state.camera.x - width / (2 * TILE * state.zoom)) - 2;
-  const maxX = Math.ceil(state.camera.x + width / (2 * TILE * state.zoom)) + 2;
-  const minY = Math.floor(state.camera.y - height / (2 * TILE * state.zoom)) - 2;
-  const maxY = Math.ceil(state.camera.y + height / (2 * TILE * state.zoom)) + 2;
+  const { minX, maxX, minY, maxY } = visibleGroundBounds();
   for (let x = minX; x <= maxX; x += 1) {
     for (let y = minY; y <= maxY; y += 1) {
       const point = worldToScreen(x, y);
@@ -703,7 +720,25 @@ function drawGround() {
       drawTerrainTile(terrainAt({ x, y }), point, size, Math.abs(x + y) % 2, x, y);
     }
   }
+}
 
+function drawGround() {
+  const { width, height } = state.viewport;
+  const key = terrainLayerKey();
+  if (terrainLayerCache.key === key && terrainLayerCache.canvas.width === canvas.width) {
+    ctx.drawImage(terrainLayerCache.canvas, 0, 0, width, height);
+  } else {
+    paintTerrainLayer();
+    if (terrainLayerCache.canvas.width !== canvas.width || terrainLayerCache.canvas.height !== canvas.height) {
+      terrainLayerCache.canvas.width = canvas.width;
+      terrainLayerCache.canvas.height = canvas.height;
+    }
+    const cacheCtx = terrainLayerCache.canvas.getContext('2d');
+    cacheCtx.drawImage(canvas, 0, 0);
+    terrainLayerCache.key = key;
+  }
+
+  const { minX, maxX, minY, maxY } = visibleGroundBounds();
   ctx.strokeStyle = state.tool === 'belt' ? 'rgba(105,216,218,.28)' : 'rgba(165,204,200,.1)';
   ctx.lineWidth = 1;
   for (let x = minX; x <= maxX + 1; x += 1) {
@@ -2075,7 +2110,7 @@ function consumeRecipeInputs(input, recipe) {
 
 function getBeltTravelFactor() {
   const techFactor = isTechUnlocked('belt-mk2') ? .28 : .4;
-  return activeCareer().effect === 'beltSpeed' ? techFactor * .75 : techFactor;
+  return activeCareerEffect() === 'beltSpeed' ? techFactor * .75 : techFactor;
 }
 
 function getMiningTime(building) {
@@ -2231,7 +2266,7 @@ function rebuildPowerGrids() {
 function getPowerGeneration(building) {
   if (!isBuildingOperational(building)) return 0;
   const base = buildings[building.type]?.generation || 0;
-  const careerMultiplier = activeCareer().effect === 'power' ? 1.2 : 1;
+  const careerMultiplier = activeCareerEffect() === 'power' ? 1.2 : 1;
   const gridMultiplier = isTechUnlocked('power-grid-mk2') ? 1.25 : 1;
   return base * careerMultiplier * gridMultiplier;
 }
@@ -2266,7 +2301,7 @@ function techUpgradeText(tech) {
 }
 
 function getResearchSpeed() {
-  return activeCareer().effect === 'research' ? 1.3 : 1;
+  return activeCareerEffect() === 'research' ? 1.3 : 1;
 }
 
 function simulateBuildings(dt) {
@@ -2299,7 +2334,7 @@ function simulateBuildings(dt) {
     if (building.type === 'smelter' && powerState.powered) {
       if (Object.values(building.output).reduce((sum, amount) => sum + amount, 0) >= outputCapacity(building)) return;
       const raw = building.recipeResource || ['copper', 'iron', 'silicon'].find(resource => (building.input[resource] || 0) > 0);
-      if (!raw) return;
+      if (!raw || (building.input[raw] || 0) <= 0) return;
       building.process += dt * efficiency;
       if (building.process >= getSmeltingTime()) {
         building.process = 0;
@@ -4593,6 +4628,7 @@ document.addEventListener('keydown', event => {
 
 let lastFrame = performance.now();
 let autosaveTime = 0;
+let hudTimer = 0;
 let gameStarted = false;
 function loop(now) {
   try {
@@ -4603,8 +4639,10 @@ function loop(now) {
     if (!state.paused) { state.time += simDt * 7; simulateBuildings(simDt); simulateResearch(simDt); simulateInterstellar(simDt); }
     autosaveTime += dt;
     if (autosaveTime >= 2) { autosaveTime = 0; saveGame(); }
-    updateHUD();
+    hudTimer += dt;
+    if (hudTimer >= .12) { hudTimer = 0; updateHUD(); }
     render();
+    if (!query('#star-map-panel').hidden) updateRouteVisual();
   } catch (error) {
     console.error('主循环单帧异常（已隔离，游戏继续运行）:', error);
   } finally {
