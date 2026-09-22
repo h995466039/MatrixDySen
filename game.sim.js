@@ -89,6 +89,20 @@ function storageHintFor(usedResources) {
   return ` · 已从物流仓储补充 ${labels}`;
 }
 
+const smelterRecipeOptions = [null, 'iron', 'copper', 'silicon'];
+
+function cycleSmelterRecipe(building) {
+  if (!building || building.type !== 'smelter') return;
+  const current = building.recipeResource || null;
+  const next = smelterRecipeOptions[(smelterRecipeOptions.indexOf(current) + 1) % smelterRecipeOptions.length];
+  building.recipeResource = next;
+  building.process = 0;
+  saveGame();
+  showToast(next ? `冶炼配方已切换 · ${resources[next].label}矿` : '冶炼配方已重置 · 将自动识别来料');
+  updateHUD();
+  render();
+}
+
 function isTechUnlocked(id) {
   return state.tech.includes(id);
 }
@@ -445,11 +459,34 @@ function getConnectedNextBelts(belt) {
   }).sort((left, right) => left.id.localeCompare(right.id));
 }
 
+function beltRouteDistance(startBelt, resource, sourceId = null) {
+  // 从某条带出发按"再走几条带能真正送达"做 BFS 计距；visited 保证环路安全。
+  const visited = new Set();
+  const queue = [[startBelt, 0]];
+  while (queue.length) {
+    const [current, depth] = queue.shift();
+    if (!current || visited.has(current.id)) continue;
+    visited.add(current.id);
+    if (findDestination(current, resource, sourceId)) return depth;
+    getConnectedNextBelts(current).forEach(next => {
+      if (!visited.has(next.id)) queue.push([next, depth + 1]);
+    });
+  }
+  return Number.POSITIVE_INFINITY;
+}
+
 function findNextBelt(belt, resource = null, sourceId = null) {
   const candidates = getConnectedNextBelts(belt);
   if (!candidates.length) return null;
   if (!resource || candidates.length === 1) return candidates[0];
-  return candidates.find(candidate => findDestinationAlongRoute(candidate, resource, sourceId)) || candidates[0];
+  // 优先走"最快能送达"的方向：修环路拓扑下按 id 序乒乓、永远到不了目的地的问题
+  let best = null;
+  let bestScore = Number.POSITIVE_INFINITY;
+  candidates.forEach(candidate => {
+    const score = beltRouteDistance(candidate, resource, sourceId);
+    if (score < bestScore) { bestScore = score; best = candidate; }
+  });
+  return best || candidates[0];
 }
 
 function warehouseResourceNeedScore(destination, resource) {
@@ -478,7 +515,12 @@ function dispatchStorageStock() {
       const candidates = Object.keys(storage.stock || {}).map(resource => {
         if ((storage.stock[resource] || 0) <= 0) return null;
         const belt = sorterOutputBelts(sorter).find(candidate => Boolean(findDestinationAlongRoute(candidate, resource, sorter.id)));
-        return belt ? { resource, belt } : null;
+        if (!belt) return null;
+        // 仓储物料只供应生产设施：目的地仍是仓储的直接跳过，防止仓储↔仓储无限摆渡
+        const destination = findDestinationAlongRoute(belt, resource, sorter.id);
+        const target = destination ? sorterAttachedBuilding(destination) : null;
+        if (!target || isStorageType(target)) return null;
+        return { resource, belt };
       }).filter(Boolean);
       const candidate = candidates[0];
       if (!candidate) return;

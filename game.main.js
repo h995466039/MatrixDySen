@@ -50,6 +50,10 @@ query('#reset-button').addEventListener('click', () => {
   showToast('本地工厂已重置');
 });
 query('#close-selection').addEventListener('click', () => cancelToolSelection());
+query('#selection-recipe').addEventListener('click', () => {
+  const building = state.buildings.find(entry => entry.id === state.selectedId);
+  if (building && building.type === 'smelter') cycleSmelterRecipe(building);
+});
 query('#selection-grid-action').addEventListener('click', () => {
   const building = state.buildings.find(entry => entry.id === state.selectedId);
   if (!building || !isPowerTowerType(building)) return;

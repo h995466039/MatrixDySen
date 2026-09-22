@@ -651,7 +651,10 @@ function buildingRecipeText(building) {
   if (building.type === 'oilExtractor') return '原油渗流 → 原油';
   if (building.type === 'waterPump') return '水源采集区 → 水';
   if (building.type === 'gasExtractor') return '天然气田 → 天然气';
-  if (building.type === 'smelter') return '原矿 → 金属锭 / 硅片';
+  if (building.type === 'smelter') {
+    const recipeLabel = building.recipeResource ? `${resources[building.recipeResource].label}矿` : '自动识别';
+    return `${recipeLabel} → 金属锭 / 硅片 · 点击切换`;
+  }
   if (building.type === 'assembler') return '铜锭 + 硅片 → 芯片';
   if (building.type === 'workbench') return '铁锭 + 铜锭 → 芯片';
   if (building.type === 'researchLab') {
@@ -1281,6 +1284,7 @@ function updateHUD() {
     query('#selection-input').textContent = resourcesOnBelt.length ? resourcesOnBelt.join('、') : '暂无物料';
     query('#selection-output').textContent = `${beltItems.length} 件运输中`;
     query('#selection-recipe').textContent = `方向 ${direction} · 起点 ${selectedBelt.x},${selectedBelt.y}`;
+    query('#selection-recipe').style.cursor = 'default';
     query('#selection-tech').textContent = '基础物流授权 · 已接入';
     const beltLevel = getBuildingLevel('belt');
     query('#selection-license').textContent = `MK-${beltLevel} · ${getBeltTravelFactor().toFixed(2)} 格/秒`;
@@ -1306,6 +1310,7 @@ function updateHUD() {
     query('#selection-state').style.color = ['科技锁定', '电力不足', '电网瘫痪', '电网高负载', '输出堵塞', '缺少输入', '缺少矩阵组件', '缺煤', '未接入矿脉', '未接入水源', '未接入电网'].includes(status) ? '#ff9b3d' : '#62d69a';
     query('#selection-output').textContent = output ? `${formatNumber(output[1])} 单位缓存` : ['miner', 'oilExtractor', 'waterPump', 'gasExtractor'].includes(selected.type) ? '采掘中 · 等待输出' : '等待产出';
     query('#selection-recipe').textContent = buildingRecipeText(selected);
+    query('#selection-recipe').style.cursor = selected.type === 'smelter' ? 'pointer' : 'default';
     query('#selection-tech').textContent = isBuildingUnlocked(selected.type) ? `${buildingTechName(selected.type)} · 已授权` : `需完成「${buildingTechName(selected.type)}」`;
     const selectionLevel = isBuildingUnlocked(selected.type) ? `MK-${Math.min(getBuildingLevel(selected.type), 5)}` : '锁定';
     query('#selection-license').textContent = `${selectionLevel} · ${isBuildingUnlocked(selected.type) ? '可运行' : '等待科技'}`;
