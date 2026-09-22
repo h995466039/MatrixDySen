@@ -398,13 +398,14 @@ function acceptsBuildingResource(building, resource) {
     // silently filling with three ores while producing none of them reliably.
     return ['copper', 'iron', 'silicon'].includes(resource) && (!building.recipeResource || building.recipeResource === resource);
   }
-  if (building.type === 'assembler') return ['copperIngot', 'siliconWafer'].includes(resource);
-  if (building.type === 'workbench') return ['ironIngot', 'copperIngot', 'siliconWafer'].includes(resource);
+  if (building.type === 'assembler') return ['copperIngot', 'siliconWafer'].includes(resource) || resource === 'water';
+  if (building.type === 'workbench') return ['ironIngot', 'copperIngot', 'siliconWafer'].includes(resource) || resource === 'crudeOil';
   if (building.type === 'thermal') return resource === 'coal';
   if (['waterPump', 'oilExtractor', 'gasExtractor'].includes(building.type)) return false;
+  if (building.type === 'gasTurbine') return resource === 'naturalGas';
   if (building.type === 'researchLab') {
     const cube = labProductionCube(building);
-    return Object.prototype.hasOwnProperty.call(cubeRecipes[cube]?.inputs || {}, resource);
+    return Object.prototype.hasOwnProperty.call(cubeRecipes[cube]?.inputs || {}, resource) || resource === 'water';
   }
   return false;
 }
@@ -704,6 +705,7 @@ function rebuildPowerGrids() {
     const members = buildingIds.map(id => powerBuildings.find(building => building.id === id)).filter(Boolean);
     const generation = members.reduce((total, building) => {
       if (building.type === 'thermal' && (building.input.coal || 0) <= 0) return total;
+      if (building.type === 'gasTurbine' && (building.input.naturalGas || 0) <= 0) return total;
       return total + getPowerGeneration(building);
     }, 0);
     const load = members.reduce((total, building) => total + (buildings[building.type]?.power || 0), 0);
@@ -783,6 +785,14 @@ function techUpgradeText(tech) {
 
 function getResearchSpeed() {
   return activeCareerEffect('research') ? 1.3 : 1;
+}
+
+const buildingCatalyst = { assembler: 'water', workbench: 'crudeOil', researchLab: 'water' };
+
+function catalystBoostFor(building) {
+  const catalyst = buildingCatalyst[building?.type] || null;
+  if (!catalyst) return { catalyst: null, boost: 1 };
+  return { catalyst, boost: (building.input?.[catalyst] || 0) > 0 ? .7 : 1 };
 }
 
 function noteProduced(resource, amount = 1, buildingId = null) {
@@ -868,10 +878,14 @@ function simulateBuildings(dt) {
         ? { inputs: { ironIngot: 1, copperIngot: 1 }, output: 'processor', time: getAssemblyTime(building) }
         : { inputs: { copperIngot: 1, siliconWafer: 1 }, output: 'processor', time: getAssemblyTime(building) };
       if (!hasRecipeInputs(building.input, recipe)) return;
+      const assemblyCatalyst = catalystBoostFor(building);
       building.process += dt * efficiency;
-      if (building.process >= recipe.time) {
+      if (building.process >= recipe.time * assemblyCatalyst.boost) {
         building.process = 0;
         consumeRecipeInputs(building.input, recipe);
+        if (assemblyCatalyst.catalyst && (building.input[assemblyCatalyst.catalyst] || 0) > 0) {
+          building.input[assemblyCatalyst.catalyst] -= 1;
+        }
         building.output[recipe.output] = (building.output[recipe.output] || 0) + 1;
         noteProduced(recipe.output, 1, building.id);
       }
@@ -890,10 +904,14 @@ function simulateBuildings(dt) {
         }
       });
       if (!hasRecipeInputs(building.input, recipe)) return;
+      const labCatalyst = catalystBoostFor(building);
       building.process += dt * efficiency;
-      if (building.process >= getResearchProductionTime(building, cube)) {
+      if (building.process >= getResearchProductionTime(building, cube) * labCatalyst.boost) {
         building.process = 0;
         consumeRecipeInputs(building.input, recipe);
+        if (labCatalyst.catalyst && (building.input[labCatalyst.catalyst] || 0) > 0) {
+          building.input[labCatalyst.catalyst] -= 1;
+        }
         building.output[cube] = (building.output[cube] || 0) + 1;
         noteProduced(cube, 1, building.id);
       }
@@ -904,6 +922,14 @@ function simulateBuildings(dt) {
       if (building.fuelTimer >= 4) {
         building.fuelTimer = 0;
         building.input.coal -= 1;
+      }
+    }
+
+    if (building.type === 'gasTurbine' && powerState.powered && (building.input.naturalGas || 0) > 0) {
+      building.fuelTimer = (building.fuelTimer || 0) + dt * efficiency;
+      if (building.fuelTimer >= 3) {
+        building.fuelTimer = 0;
+        building.input.naturalGas -= 1;
       }
     }
   });

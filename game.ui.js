@@ -655,14 +655,15 @@ function buildingRecipeText(building) {
     const recipeLabel = building.recipeResource ? `${resources[building.recipeResource].label}矿` : '自动识别';
     return `${recipeLabel} → 金属锭 / 硅片 · 点击切换`;
   }
-  if (building.type === 'assembler') return '铜锭 + 硅片 → 芯片';
-  if (building.type === 'workbench') return '铁锭 + 铜锭 → 芯片';
+  if (building.type === 'assembler') return `铜锭 + 硅片 → 芯片${(building.input?.water || 0) > 0 ? ' · 水冷却加速中' : ''}`;
+  if (building.type === 'workbench') return `铁锭 + 铜锭 → 芯片${(building.input?.crudeOil || 0) > 0 ? ' · 油润滑加速中' : ''}`;
   if (building.type === 'researchLab') {
     const cube = labProductionCube(building);
     const recipe = cubeRecipes[cube];
-    return recipe ? `${building.researchMode === 'auto' ? '自动 · ' : ''}${formatRecipeInputs(recipe.inputs)} → ${recipe.label}` : '等待研究目标';
+    return recipe ? `${building.researchMode === 'auto' ? '自动 · ' : ''}${formatRecipeInputs(recipe.inputs)} → ${recipe.label}${(building.input?.water || 0) > 0 ? ' · 水冷却加速中' : ''}` : '等待研究目标';
   }
   if (building.type === 'thermal') return '煤 → 电力';
+  if (building.type === 'gasTurbine') return '天然气 → 电力';
   if (building.type === 'wind') return '风场 → 电力';
   if (isPowerTowerType(building)) return `${building.gridEnabled === false ? '局部覆盖 · 外部断开' : '圆形覆盖 · 外部接入'} · ${getTransmissionRange(building).toFixed(1)} 格`;
   if (building.type === 'sorter') {
@@ -675,6 +676,7 @@ function buildingRecipeText(building) {
 function buildingStatus(building) {
   if (!isBuildingOperational(building)) return '科技锁定';
   if (building.type === 'thermal' && (building.input.coal || 0) <= 0) return '缺煤';
+  if (building.type === 'gasTurbine' && (building.input.naturalGas || 0) <= 0) return '缺气';
   const powerState = getGridPowerState(building);
   if (isPowerTowerType(building)) {
     if (!powerState.grid) return '未接入电网';
@@ -685,6 +687,7 @@ function buildingStatus(building) {
   if (isPowerBuilding(building) && powerState.grid?.highLoad && (buildings[building.type]?.power || 0) > 0) return '电网高负载';
   if (building.type === 'wind') return '供电中';
   if (building.type === 'thermal') return '供电中';
+  if (building.type === 'gasTurbine') return '供电中';
   if (building.type === 'waterPump') {
     const node = state.nodes.find(item => item.id === building.nodeId);
     return node?.resource === 'water' && node.amount > 0 ? '采水中' : '未接入水源';
@@ -752,6 +755,7 @@ function missingInputsFor(building) {
     recipe = cubeRecipes[cube];
   }
   if (building.type === 'thermal') recipe = { inputs: { coal: 1 } };
+  if (building.type === 'gasTurbine') recipe = { inputs: { naturalGas: 1 } };
   if (!recipe) return [];
   return Object.entries(recipe.inputs)
     .filter(([resource, amount]) => (building.input?.[resource] || 0) < amount)
@@ -1317,7 +1321,7 @@ function updateHUD() {
     const output = Object.entries(selected.output).find(([, amount]) => amount > 0);
     const status = buildingStatus(selected);
     query('#selection-state').textContent = status;
-    query('#selection-state').style.color = ['科技锁定', '电力不足', '电网瘫痪', '电网高负载', '输出堵塞', '缺少输入', '缺少矩阵组件', '缺煤', '未接入矿脉', '未接入水源', '未接入电网'].includes(status) ? '#ff9b3d' : '#62d69a';
+    query('#selection-state').style.color = ['科技锁定', '电力不足', '电网瘫痪', '电网高负载', '输出堵塞', '缺少输入', '缺少矩阵组件', '缺煤', '缺气', '未接入矿脉', '未接入水源', '未接入电网'].includes(status) ? '#ff9b3d' : '#62d69a';
     query('#selection-output').textContent = output ? `${formatNumber(output[1])} 单位缓存` : ['miner', 'oilExtractor', 'waterPump', 'gasExtractor'].includes(selected.type) ? '采掘中 · 等待输出' : '等待产出';
     query('#selection-recipe').textContent = buildingRecipeText(selected);
     query('#selection-recipe').style.cursor = selected.type === 'smelter' ? 'pointer' : 'default';
@@ -1358,12 +1362,13 @@ function updateHUD() {
     query('#selection-progress-fill').style.width = `${buildingProgress(selected) * 100}%`;
     const selectedPowerState = getGridPowerState(selected);
     const nominalPower = meta.power || 0;
-    const hasFuel = selected.type !== 'thermal' || (selected.input?.coal || 0) > 0;
+    const fuelResource = selected.type === 'thermal' ? 'coal' : selected.type === 'gasTurbine' ? 'naturalGas' : null;
+    const hasFuel = !fuelResource || (selected.input?.[fuelResource] || 0) > 0;
     if (isPowerTowerType(selected)) {
       query('#selection-power-label').textContent = '自身耗电';
       query('#selection-power').textContent = `${nominalPower.toFixed(2)} MW`;
     } else if (meta.generation) {
-      query('#selection-power-label').textContent = hasFuel ? '当前发电' : '当前发电 · 缺煤';
+      query('#selection-power-label').textContent = hasFuel ? '当前发电' : fuelResource === 'naturalGas' ? '当前发电 · 缺气' : '当前发电 · 缺煤';
       query('#selection-power').textContent = hasFuel ? `+${getPowerGeneration(selected).toFixed(2)} MW` : '+0.00 MW';
     } else {
       query('#selection-power-label').textContent = selectedPowerState.grid?.highLoad ? '耗电 · 有效 50%' : '耗电';

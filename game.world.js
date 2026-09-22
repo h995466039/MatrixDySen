@@ -243,18 +243,20 @@ function drawResourceNode(node) {
   } else {
     drawResourceGlyph(node.resource, point.x, point.y, size * .72, .92);
   }
-  ctx.fillStyle = 'rgba(4,13,22,.82)';
-  roundedRect(ctx, point.x - 39, point.y + size * .44, 78, 18, 3); ctx.fill();
-  ctx.fillStyle = meta.color;
-  ctx.font = '700 9px Bahnschrift, sans-serif'; ctx.textAlign = 'center';
-  const cachedLabel = nodeLabelCache.get(node);
-  const labelText = cachedLabel && cachedLabel.amount === node.amount && cachedLabel.label === meta.label
-    ? cachedLabel.text
-    : `${meta.label}矿脉  ${formatNumber(node.amount)}`;
-  if (!cachedLabel || cachedLabel.amount !== node.amount || cachedLabel.label !== meta.label) {
-    nodeLabelCache.set(node, { amount: node.amount, label: meta.label, text: labelText });
+  if (state.zoom >= .62) {
+    ctx.fillStyle = 'rgba(4,13,22,.82)';
+    roundedRect(ctx, point.x - 39, point.y + size * .44, 78, 18, 3); ctx.fill();
+    ctx.fillStyle = meta.color;
+    ctx.font = '700 9px Bahnschrift, sans-serif'; ctx.textAlign = 'center';
+    const cachedLabel = nodeLabelCache.get(node);
+    const labelText = cachedLabel && cachedLabel.amount === node.amount && cachedLabel.label === meta.label
+      ? cachedLabel.text
+      : `${meta.label}矿脉  ${formatNumber(node.amount)}`;
+    if (!cachedLabel || cachedLabel.amount !== node.amount || cachedLabel.label !== meta.label) {
+      nodeLabelCache.set(node, { amount: node.amount, label: meta.label, text: labelText });
+    }
+    ctx.fillText(labelText, point.x, point.y + size * .44 + 12);
   }
-  ctx.fillText(labelText, point.x, point.y + size * .44 + 12);
   ctx.restore();
 }
 

@@ -49,6 +49,7 @@ const assetPaths = {
   storage: 'godot_game/assets/generated/building_storage_north.png',
   waterPump: 'godot_game/assets/generated/building_water-pump_v01.png',
   gasExtractor: 'godot_game/assets/generated/building_gas-extractor_v01.svg',
+  gasTurbine: 'godot_game/assets/generated/building_gas-turbine_v01.svg',
   powerTower: 'godot_game/assets/generated/building_power-tower_v01.svg',
   longPowerTower: 'godot_game/assets/generated/building_long-power-tower_v01.svg',
   ultraPowerTower: 'godot_game/assets/generated/building_ultra-power-tower_v01.svg',
@@ -194,6 +195,7 @@ const buildings = {
   workbench: { label: '工作台', size: 2, color: '#e8a46e', power: .5, cost: { iron: 12, copper: 4 }, tech: 'workbench-tech' },
   wind: { label: '风力发电机', size: 2, color: '#a8e7dd', power: 0, generation: 2.6, cost: { iron: 10, copper: 6 }, tech: 'foundation' },
   thermal: { label: '火力发电机', size: 2, color: '#ee765c', power: .2, generation: 6, cost: { iron: 18, copper: 10 }, tech: 'thermal-power' },
+  gasTurbine: { label: '燃气轮机', size: 2, color: '#b6e7ba', power: .5, generation: 9, cost: { iron: 22, copper: 8, processor: 2 }, tech: 'gas-power', image: 'gasTurbine' },
   longPowerTower: { label: '远距离电力塔', size: 1, color: '#8ccfff', power: .14, transmissionRange: 9, cost: { iron: 12, copper: 6, processor: 1 }, tech: 'power-transmission', image: 'longPowerTower' },
   ultraPowerTower: { label: '超远距离电力塔', size: 2, color: '#c58cff', power: .24, transmissionRange: 15, cost: { iron: 24, copper: 12, processor: 3 }, tech: 'advanced-power-grid', image: 'ultraPowerTower' },
   oilExtractor: { label: '石油提取机', size: 2, color: '#d18a57', power: 2.2, cost: { iron: 24, processor: 2 }, tech: 'oil-processing', image: 'oilExtractor', extractionForm: 'liquid' },
@@ -239,6 +241,7 @@ const techTree = {
     { id: 'fluid-storage', label: '流体罐区', short: '物流分支', description: '用密封罐体存放水与原油。液体仓储只接受液体资源，不能混入固体或气体。', requires: ['planetary-logistics'], cube: 'energyCube', cost: 16, unlocks: ['liquidStorage'], effectText: '解锁液体仓储' },
     { id: 'gas-extraction', label: '气体压采', short: '能源分支', description: '建立气体采集头，把天然气从独立气田压入生产网络。', requires: ['oil-processing'], cube: 'structureCube', cost: 22, unlocks: ['gasExtractor'], effectText: '解锁天然气压采机' },
     { id: 'gas-storage', label: '高压气库', short: '物流分支', description: '使用高压容器存放天然气，气体资源不能进入固体或液体仓储。', requires: ['gas-extraction'], cube: 'informationCube', cost: 28, unlocks: ['gasStorage'], effectText: '解锁气体仓储' },
+    { id: 'gas-power', label: '燃气发电', short: '能源分支', description: '用天然气驱动燃气轮机：出力稳定、无需煤线。', requires: ['gas-extraction'], cube: 'structureCube', cost: 20, unlocks: ['gasTurbine'], effectText: '解锁燃气轮机 · 天然气发电' },
     { id: 'logistics-mk3', label: '物流 Mk-III', short: '物流分支', description: '第三代物流控制器同步提升传送带、分拣器和三类仓储的吞吐能力。', requires: ['sorter-tech', 'belt-mk2', 'storage-mk2'], cube: 'structureCube', cost: 26, upgrades: ['belt', 'sorter', 'storage', 'solidStorage', 'liquidStorage', 'gasStorage'], upgradeTier: 3, effectText: '物流设备升级至 Mk-III' },
     { id: 'logistics-mk4', label: '物流 Mk-IV', short: '物流分支', description: '相位物流节点进一步压缩传输延迟，并扩大三类仓储容量。', requires: ['logistics-mk3', 'advanced-assembly'], cube: 'informationCube', cost: 40, upgrades: ['belt', 'sorter', 'storage', 'solidStorage', 'liquidStorage', 'gasStorage'], upgradeTier: 4, effectText: '物流设备升级至 Mk-IV' },
     { id: 'logistics-mk5', label: '物流 Mk-V', short: '物流分支', description: '恒星级物流协议，提供最高移动速度、分拣速度和仓储容量。', requires: ['logistics-mk4', 'stellar-network'], cube: 'informationCube', cost: 64, upgrades: ['belt', 'sorter', 'storage', 'solidStorage', 'liquidStorage', 'gasStorage'], upgradeTier: 5, effectText: '物流设备升级至 Mk-V' },
@@ -269,6 +272,7 @@ const startingKits = {
   solidStorage: 0,
   liquidStorage: 0,
   gasStorage: 0,
+  gasTurbine: 0,
   logisticsStation: 0,
   longPowerTower: 0,
   ultraPowerTower: 0,
@@ -290,6 +294,7 @@ const kitDescriptions = {
   solidStorage: '只接受铁、铜、硅、煤等固体资源。',
   liquidStorage: '只接受水与原油等液体资源。',
   gasStorage: '只接受天然气等气体资源。',
+  gasTurbine: '消耗天然气，输出稳定电力。',
   logisticsStation: '建立跨星球货运与资源回收节点。',
   longPowerTower: '扩大输电半径，连接更远的局部电网。',
   ultraPowerTower: '建立超远距离骨干输电网络。'
@@ -517,7 +522,7 @@ function footprintCells(cell, size) {
 function inputCapacity(building) {
   if (!building) return 0;
   if (building.type === 'researchLab') return 6;
-  if (building.type === 'smelter' || building.type === 'thermal') return 8;
+  if (building.type === 'smelter' || building.type === 'thermal' || building.type === 'gasTurbine') return 8;
   if (building.type === 'assembler' || building.type === 'workbench') return 6;
   return 4;
 }
@@ -719,7 +724,7 @@ const dockCategoryByTool = Object.freeze({
   belt: 'logistics', sorter: 'logistics', logisticsStation: 'logistics',
   smelter: 'manufacture', assembler: 'manufacture', workbench: 'manufacture',
   researchLab: 'research',
-  wind: 'power', thermal: 'power', powerTower: 'power', longPowerTower: 'power', ultraPowerTower: 'power',
+  wind: 'power', thermal: 'power', gasTurbine: 'power', powerTower: 'power', longPowerTower: 'power', ultraPowerTower: 'power',
   storage: 'storage', solidStorage: 'storage', liquidStorage: 'storage', gasStorage: 'storage'
 });
 const dockCategories = new Set(['tools', 'extract', 'logistics', 'manufacture', 'research', 'power', 'storage']);

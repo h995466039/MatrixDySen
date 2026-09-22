@@ -268,7 +268,7 @@ canvas.addEventListener('wheel', event => {
   if (oldZoom !== state.zoom) showToast(`视野缩放 · ${Math.round(state.zoom * 100)}%`);
 }, { passive: false });
 
-const toolHotkeys = { q: 'sorter', e: 'solidStorage', f: 'researchLab', g: 'wind', h: 'thermal', z: 'workbench', x: 'oilExtractor', v: 'gasExtractor', y: 'liquidStorage', u: 'gasStorage', i: 'logisticsStation' };
+const toolHotkeys = { q: 'sorter', e: 'solidStorage', f: 'researchLab', g: 'wind', h: 'thermal', j: 'gasTurbine', z: 'workbench', x: 'oilExtractor', v: 'gasExtractor', y: 'liquidStorage', u: 'gasStorage', i: 'logisticsStation' };
 
 document.addEventListener('keydown', event => {
   if (event.target.tagName === 'INPUT') return;

@@ -399,6 +399,18 @@ function runQaPlaythrough() {
   state.buildings.push(gasStorage);
   check(!acceptsBuildingResource(storage, 'naturalGas') && acceptsBuildingResource(gasStorage, 'naturalGas') && !acceptsBuildingResource(gasStorage, 'water'), '气体仓储错误接受了其他物态');
   check(putInStorage('naturalGas', 3) === 3 && storageAmount('naturalGas') === 3, '气体资源没有进入独立气体仓储');
+  researchQaTech('gas-power');
+  const qaTurbine = makeBuilding('gasTurbine', 50, 50);
+  state.buildings.push(qaTurbine);
+  check(acceptsBuildingResource(qaTurbine, 'naturalGas') && !acceptsBuildingResource(qaTurbine, 'coal'), '燃气轮机只接受天然气燃料');
+  const qaTurbineBaseGen = (rebuildPowerGrids().find(grid => grid.buildingIds.includes(qaTurbine.id)) || {}).generation || 0;
+  qaTurbine.input = { naturalGas: 4 };
+  const qaTurbineFueledGen = (rebuildPowerGrids().find(grid => grid.buildingIds.includes(qaTurbine.id)) || {}).generation || 0;
+  check(qaTurbineFueledGen > qaTurbineBaseGen, '燃气轮机有燃料时应计入发电');
+  const qaCatalystProbe = makeBuilding('assembler', 52, 52);
+  qaCatalystProbe.input = { water: 2 };
+  check(catalystBoostFor(qaCatalystProbe).boost < 1, '水冷却未提供装配加速');
+  state.buildings = state.buildings.filter(building => building.id !== qaTurbine.id);
   check(placementCheck('gasExtractor', { x: -4, y: -22 }).valid, '天然气压采机无法覆盖远端气田');
   check(!placementCheck('gasExtractor', { x: -2, y: -22 }).valid, '天然气压采机可以压住气田核心格');
   const oilPlacementBelts = state.belts;
