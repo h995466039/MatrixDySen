@@ -510,6 +510,7 @@ function runQaPlaythrough() {
   storage.stock = { structureCube: 80, titanium: 40, processor: 20 };
   for (let index = 0; index < 20; index += 1) contributeStellarProject();
   check(state.stellarProject.progress === 100, '恒星工程未完成');
+  check(storageAmount('stellarFrame') >= 2, '戴森框架施工没有产出可建造的恒星框架组件');
   const qaReceiver = makeBuilding('stellarReceiver', 20, 8);
   state.buildings.push(qaReceiver);
   rebuildPowerGrids();

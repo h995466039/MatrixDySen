@@ -1154,7 +1154,9 @@ function contributeStellarProject() {
   takeStorageCost(stellarModuleCost);
   state.stellarProject.progress = clamp(state.stellarProject.progress + 5, 0, 100);
   state.stellarProject.modules += 1;
+  // 框架施工把原材料组装成恒星框架组件，作为后续部署「恒星能量接收器」的建材来源。
+  putInStorage('stellarFrame', 4);
   saveGame();
-  showToast(`框架组件已部署 · ${state.stellarProject.progress}%`);
+  showToast(`框架组件已部署 · ${state.stellarProject.progress}% · 恒星框架组件 +4`);
   updateStellarProjectUI();
 }
