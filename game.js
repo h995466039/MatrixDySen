@@ -554,9 +554,11 @@ function careerLabel() {
   return state.career ? activeCareer().label : '选择职业';
 }
 
+let saveFailureNotified = false;
 function saveGame() {
   if (qaDemoMode || qaPlaythroughMode) return;
-  localStorage.setItem(SAVE_KEY, JSON.stringify({
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify({
     buildings: state.buildings,
     belts: state.belts,
     inventory: state.inventory,
@@ -569,7 +571,14 @@ function saveGame() {
     stellarProject: state.stellarProject,
     career: state.career || 'logistics',
     careerChosen: state.careerChosen
-  }));
+    }));
+  } catch (error) {
+    if (!saveFailureNotified) {
+      saveFailureNotified = true;
+      showToast('存档写入失败 · 浏览器存储空间可能已满，请清理后继续', 'warning');
+    }
+    console.error('saveGame 写入失败，本次进度未保存:', error);
+  }
 }
 
 function resize() {
@@ -1559,13 +1568,22 @@ function craftRecipe(id) {
   if (recipe.outputType === 'kit') state.kits[recipe.output] = kitCount(recipe.output) + recipe.amount;
   else state.inventory[recipe.output] = (state.inventory[recipe.output] || 0) + recipe.amount;
   saveGame();
-  showToast(`${recipe.outputLabel} 已加入待放置套件`);
+  const storageHint = lastSpendFromStorage.length ? `（物流仓储补料：${[...new Set(lastSpendFromStorage)].map(resource => resources[resource].label).join('、')}）` : '';
+  showToast(`${recipe.outputLabel} 已加入待放置套件${storageHint}`);
   renderCraftPanel();
   updateHUD();
 }
 
+function storageTotal(resource) {
+  return storageBuildings().reduce((sum, storage) => sum + (storage.stock?.[resource] || 0), 0);
+}
+
+function totalAmount(resource) {
+  return (state.inventory[resource] || 0) + storageTotal(resource);
+}
+
 function canAfford(cost, multiplier = 1) {
-  return Object.entries(cost).every(([resource, amount]) => (state.inventory[resource] || 0) >= amount * multiplier);
+  return Object.entries(cost).every(([resource, amount]) => totalAmount(resource) >= amount * multiplier);
 }
 
 function canAffordStorage(cost, multiplier = 1) {
@@ -1576,8 +1594,24 @@ function takeStorageCost(cost, multiplier = 1) {
   Object.entries(cost).forEach(([resource, amount]) => takeFromStorage(resource, amount * multiplier));
 }
 
+let lastSpendFromStorage = [];
 function spend(cost, multiplier = 1) {
-  Object.entries(cost).forEach(([resource, amount]) => { state.inventory[resource] = (state.inventory[resource] || 0) - amount * multiplier; });
+  lastSpendFromStorage = [];
+  Object.entries(cost).forEach(([resource, amount]) => {
+    let remaining = amount * multiplier;
+    const fromInventory = Math.min(state.inventory[resource] || 0, remaining);
+    state.inventory[resource] = (state.inventory[resource] || 0) - fromInventory;
+    remaining -= fromInventory;
+    if (remaining <= 0) return;
+    storageBuildings().forEach(storage => {
+      if (remaining <= 0 || !storage.stock) return;
+      const take = Math.min(storage.stock[resource] || 0, remaining);
+      if (take <= 0) return;
+      storage.stock[resource] -= take;
+      remaining -= take;
+      lastSpendFromStorage.push(resource);
+    });
+  });
 }
 
 function refund(cost, ratio = .6) {
@@ -1683,7 +1717,8 @@ function placeBuilding(cell) {
   state.selectedId = building.id;
   state.selectedBeltId = null;
   saveGame();
-  showToast(`${buildings[state.tool].label} 已部署`);
+  const storageHint = (!usedKit && lastSpendFromStorage.length) ? `（物流仓储补料：${[...new Set(lastSpendFromStorage)].map(resource => resources[resource].label).join('、')}）` : '';
+  showToast(`${buildings[state.tool].label} 已部署${storageHint}`);
 }
 
 function beltAt(cell) {
@@ -1723,12 +1758,39 @@ function placeBelt(start, end, presetSegments = null) {
     };
   }));
   saveGame();
-  showToast(`传送带已铺设 · ${cells.length} 格`);
+  const storageHint = lastSpendFromStorage.length ? `（物流仓储补料：${[...new Set(lastSpendFromStorage)].map(resource => resources[resource].label).join('、')}）` : '';
+  showToast(`传送带已铺设 · ${cells.length} 格${storageHint}`);
+}
+
+function salvageBuildingContents(building) {
+  let moved = 0;
+  [building.stock, building.input, building.output].forEach(buffer => {
+    Object.entries(buffer || {}).forEach(([resource, amount]) => {
+      if (!(amount > 0)) return;
+      state.inventory[resource] = (state.inventory[resource] || 0) + amount;
+      buffer[resource] = 0;
+      moved += amount;
+    });
+  });
+  return moved;
 }
 
 function removeAt(cell) {
   const building = findBuildingAt(cell);
   if (building) {
+    if (isStorageType(building) && storageUsed(building) > 0) {
+      const key = `${building.x},${building.y}`;
+      const now = performance.now();
+      if (!state.confirmRemove || state.confirmRemove.key !== key || now > state.confirmRemove.until) {
+        state.confirmRemove = { key, until: now + 4000 };
+        showToast(`仓储内还有 ${storageUsed(building)} 件物料 · 4 秒内再点一次确认拆除（内容物转入随身库存）`, 'warning');
+        return;
+      }
+      state.confirmRemove = null;
+    }
+    const orphanSorters = state.buildings.filter(item => item.type === 'sorter' && sorterAttachedBuilding(item)?.id === building.id);
+    let salvaged = salvageBuildingContents(building);
+    orphanSorters.forEach(sorter => { salvaged += salvageBuildingContents(sorter); });
     state.buildings = state.buildings.filter(item => item.id !== building.id);
     if (building.constructionKit) state.kits[building.type] = kitCount(building.type) + 1;
     else refund(buildings[building.type].cost);
@@ -1736,24 +1798,32 @@ function removeAt(cell) {
     state.selectedBeltId = null;
     rebuildPowerGrids();
     saveGame();
-    showToast(`${buildings[building.type].label} 已回收`);
+    const notes = [];
+    if (salvaged > 0) notes.push(`内容物 ${salvaged} 件已转入随身库存`);
+    if (orphanSorters.length) notes.push(`${orphanSorters.length} 个分拣器失去对接目标`);
+    showToast(`${buildings[building.type].label} 已回收${notes.length ? ' · ' + notes.join(' · ') : ''}`, notes.length ? 'warning' : 'ok');
     return;
   }
-  const beltIndex = state.belts.findIndex(belt => beltCells(belt).some(entry => entry.x === cell.x && entry.y === cell.y));
-  if (beltIndex !== -1) {
-    const [belt] = state.belts.splice(beltIndex, 1);
-    state.buildings.filter(building => building.type === 'sorter').forEach(sorter => {
+  const belt = findBeltAt(cell);
+  if (belt) {
+    const beltIndex = state.belts.findIndex(entry => entry.id === belt.id);
+    if (beltIndex !== -1) state.belts.splice(beltIndex, 1);
+    state.buildings.filter(item => item.type === 'sorter').forEach(sorter => {
       Object.entries(sorter.sorterRules || {}).forEach(([resource, beltId]) => {
         if (beltId === belt.id) delete sorter.sorterRules[resource];
       });
     });
+    const inFlight = state.items.filter(item => item.beltId === belt.id);
+    inFlight.forEach(item => {
+      state.inventory[item.resource] = (state.inventory[item.resource] || 0) + 1;
+    });
+    state.items = state.items.filter(item => item.beltId !== belt.id);
     const kitCells = Math.max(0, belt.kitCells || 0);
     state.kits.belt += Math.floor(kitCells * .6);
     state.inventory.iron += Math.floor((belt.length - kitCells) * .6);
     state.selectedBeltId = null;
-    state.items = state.items.filter(item => item.beltId !== belt.id);
     saveGame();
-    showToast('传送带已回收');
+    showToast(inFlight.length ? `传送带已回收 · 在途 ${inFlight.length} 件货物已转入随身库存` : '传送带已回收');
     return;
   }
   showToast('这里没有可拆除对象', 'warning');
@@ -2302,24 +2372,41 @@ function simulateBuildings(dt) {
   simulateSorters(dt);
   dispatchSorterOutputs();
 
+  let reclaimedCargo = 0;
   state.items = state.items.filter(item => {
     const belt = state.belts.find(entry => entry.id === item.beltId);
     if (!belt) return false;
-    item.progress += dt / Math.max(.55, belt.length * getBeltTravelFactor());
-    if (item.progress < 1) return true;
-    const destination = findDestination(belt, item.resource, item.sourceId);
-    if (destination && deliver(destination, item.resource)) return false;
-    const nextBelt = findNextBelt(belt, item.resource, item.sourceId);
-    if (nextBelt) {
-      item.beltId = nextBelt.id;
-      item.progress = 0;
-    } else {
-      // Keep a single cargo unit parked at the terminal. It will be retried on
-      // the next tick after the destination consumes space.
-      item.progress = 1;
+    if (item.progress < 1) {
+      item.progress += dt / Math.max(.55, belt.length * getBeltTravelFactor());
+      if (item.progress < 1) return true;
+      item.wait = 0;
+      item.retry = .5;
     }
+    item.wait = (item.wait || 0) + dt;
+    item.retry = (item.retry || 0) + dt;
+    if (item.retry >= .5) {
+      item.retry = 0;
+      const destination = findDestination(belt, item.resource, item.sourceId);
+      if (destination && deliver(destination, item.resource)) return false;
+      const nextBelt = findNextBelt(belt, item.resource, item.sourceId);
+      if (nextBelt) {
+        item.beltId = nextBelt.id;
+        item.progress = 0;
+        item.wait = 0;
+        return true;
+      }
+      if (item.wait >= 40) {
+        // 末端既没有接收方、也没有后续带段：40 秒后收回随身库存，避免永久堵塞。
+        state.inventory[item.resource] = (state.inventory[item.resource] || 0) + 1;
+        reclaimedCargo += 1;
+        return false;
+      }
+    }
+    // 货物停靠终端等待：每 0.5 秒重试一次；下游恢复即自动续运。
+    item.progress = 1;
     return true;
   });
+  if (reclaimedCargo > 0) showToast(`物流末端无接收方 · ${reclaimedCargo} 件货物已收回随身库存`, 'warning');
 }
 
 function simulateResearch(dt) {
@@ -3054,7 +3141,11 @@ function buildingStatus(building) {
     if (!target) return '未连接建筑';
     const beltCount = building.sorterMode === 'output' ? sorterOutputBelts(building).length : sorterInputBelts(building).length;
     if (!beltCount) return '未连接传送带';
-    return building.sorterMode === 'output' ? '等待取货' : building.process > .05 ? '取放中' : '等待来料';
+    if (building.sorterMode === 'output') {
+      const buffered = Object.values(building.output || {}).reduce((sum, amount) => sum + amount, 0);
+      return buffered >= inputCapacity(building) ? '出料受阻' : '等待取货';
+    }
+    return building.process > .05 ? '取放中' : '等待来料';
   }
   if (isStorageType(building)) {
     if (storageUsed(building) >= storageCapacity(building)) return '仓储已满';
@@ -3068,7 +3159,7 @@ function buildingStatus(building) {
     return building.timer > .05 ? '采掘中' : '等待脉冲';
   }
   if (building.type === 'researchLab' && !researchTarget()) return '待选择科技';
-  if (Object.values(building.output).some(amount => amount > 0)) return '输出堵塞';
+  if (Object.values(building.output).reduce((sum, amount) => sum + amount, 0) >= outputCapacity(building)) return '输出堵塞';
   if (building.process > .05) return building.type === 'researchLab' ? '制备矩阵' : '生产中';
   if (Object.values(building.input).some(amount => amount > 0)) return '等待加工';
   return building.type === 'researchLab' ? '等待矩阵组件' : '缺少输入';
@@ -3497,7 +3588,7 @@ function toggleCareerPanel(force) {
 function renderCraftPanel() {
   const host = query('#craft-recipes');
   if (!host) return;
-  const materialSummary = ['iron', 'copper', 'silicon'].map(resource => `${resources[resource].label} ${formatNumber(state.inventory[resource] || 0)}`).join(' · ');
+  const materialSummary = ['iron', 'copper', 'silicon'].map(resource => `${resources[resource].label} ${formatNumber(totalAmount(resource))}`).join(' · ');
   const kitSummary = handcraftRecipes
     .filter(recipe => recipe.outputType === 'kit' && kitCount(recipe.output) > 0)
     .map(recipe => `${recipe.label.replace('套件', '')} ${kitCount(recipe.output)}`)
@@ -4258,6 +4349,13 @@ query('#objective-action').addEventListener('click', () => runDiagnosticAction()
 query('#monitor-advice-action').addEventListener('click', () => runDiagnosticAction());
 query('#research-diagnostic-action').addEventListener('click', () => runDiagnosticAction());
 query('#reset-button').addEventListener('click', () => {
+  const now = performance.now();
+  if (!state.confirmReset || now > state.confirmReset) {
+    state.confirmReset = now + 5000;
+    showToast('再次点击「重置」以确认清空本地工厂（5 秒内有效）', 'warning');
+    return;
+  }
+  state.confirmReset = null;
   const storage = makeBuilding('storage', 3, -1);
   storage.baseHub = true;
   storage.stock = { ...startingStorageStock };
@@ -4453,12 +4551,13 @@ canvas.addEventListener('pointerup', event => {
 canvas.addEventListener('pointerleave', () => { if (!state.pointer.down) state.pointer.cell = null; });
 canvas.addEventListener('wheel', event => {
   event.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const beforeX = (event.clientX - rect.left - state.viewport.width / 2) / (TILE * state.zoom) + state.camera.x;
+  const beforeY = (event.clientY - rect.top - state.viewport.height / 2) / (TILE * state.zoom) + state.camera.y;
   const oldZoom = state.zoom;
   state.zoom = clamp(state.zoom * (event.deltaY < 0 ? 1.1 : .9), .55, 1.65);
-  const rect = canvas.getBoundingClientRect();
-  const before = screenToCell(event.clientX, event.clientY);
-  state.camera.x += before.x - ((event.clientX - rect.left - state.viewport.width / 2) / (TILE * state.zoom) + state.camera.x);
-  state.camera.y += before.y - ((event.clientY - rect.top - state.viewport.height / 2) / (TILE * state.zoom) + state.camera.y);
+  state.camera.x += beforeX - ((event.clientX - rect.left - state.viewport.width / 2) / (TILE * state.zoom) + state.camera.x);
+  state.camera.y += beforeY - ((event.clientY - rect.top - state.viewport.height / 2) / (TILE * state.zoom) + state.camera.y);
   if (oldZoom !== state.zoom) showToast(`视野缩放 · ${Math.round(state.zoom * 100)}%`);
 }, { passive: false });
 
@@ -4496,17 +4595,24 @@ let lastFrame = performance.now();
 let autosaveTime = 0;
 let gameStarted = false;
 function loop(now) {
-  const dt = Math.min(.08, (now - lastFrame) / 1000);
-  lastFrame = now;
-  state.animTime = now / 1000;
-  const simDt = dt * state.simulationSpeed;
-  if (!state.paused) { state.time += simDt * 7; simulateBuildings(simDt); simulateResearch(simDt); simulateInterstellar(simDt); }
-  autosaveTime += dt;
-  if (autosaveTime >= 2) { autosaveTime = 0; saveGame(); }
-  updateHUD();
-  render();
-  requestAnimationFrame(loop);
+  try {
+    const dt = Math.min(.08, (now - lastFrame) / 1000);
+    lastFrame = now;
+    state.animTime = now / 1000;
+    const simDt = dt * state.simulationSpeed;
+    if (!state.paused) { state.time += simDt * 7; simulateBuildings(simDt); simulateResearch(simDt); simulateInterstellar(simDt); }
+    autosaveTime += dt;
+    if (autosaveTime >= 2) { autosaveTime = 0; saveGame(); }
+    updateHUD();
+    render();
+  } catch (error) {
+    console.error('主循环单帧异常（已隔离，游戏继续运行）:', error);
+  } finally {
+    requestAnimationFrame(loop);
+  }
 }
+window.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveGame(); });
+window.addEventListener('beforeunload', () => saveGame());
 
 function initializeGame() {
   if (gameStarted) return;
