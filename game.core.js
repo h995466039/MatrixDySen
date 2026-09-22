@@ -20,6 +20,27 @@ const terrainRegions = [
   { kind: 'water', label: '低洼水域', short: '水域', minX: 25, maxX: 35, minY: 14, maxY: 21 },
   { kind: 'water', label: '低洼水域', short: '水域', minX: -35, maxX: -29, minY: -3, maxY: 2 }
 ];
+const terrainProfiles = {
+  home: terrainRegions,
+  forge: [
+    { kind: 'rock', label: '熔岩玄武岩', short: '岩场', minX: -31, maxX: -24, minY: -18, maxY: -11 },
+    { kind: 'rock', label: '熔岩玄武岩', short: '岩场', minX: 9, maxX: 18, minY: 10, maxY: 18 },
+    { kind: 'water', label: '硫化低洼地', short: '低洼', minX: -15, maxX: -9, minY: 8, maxY: 14 },
+    { kind: 'water', label: '硫化低洼地', short: '低洼', minX: 21, maxX: 28, minY: -12, maxY: -6 }
+  ],
+  frost: [
+    { kind: 'rock', label: '冰壳断层', short: '冰岩', minX: -27, maxX: -18, minY: -20, maxY: -14 },
+    { kind: 'rock', label: '冰壳断层', short: '冰岩', minX: 17, maxX: 28, minY: 3, maxY: 11 },
+    { kind: 'water', label: '融冰湖', short: '冰湖', minX: -12, maxX: -3, minY: 8, maxY: 17 },
+    { kind: 'water', label: '融冰湖', short: '冰湖', minX: 24, maxX: 34, minY: -20, maxY: -12 }
+  ],
+  archive: [
+    { kind: 'rock', label: '遗迹基岩', short: '基岩', minX: -22, maxX: -14, minY: -8, maxY: 0 },
+    { kind: 'rock', label: '遗迹基岩', short: '基岩', minX: 13, maxX: 23, minY: -19, maxY: -10 },
+    { kind: 'water', label: '古代蓄水层', short: '蓄水层', minX: -32, maxX: -24, minY: 12, maxY: 20 },
+    { kind: 'water', label: '古代蓄水层', short: '蓄水层', minX: 1, maxX: 9, minY: 7, maxY: 15 }
+  ]
+};
 const SAVE_KEY = 'stellar-echo-sandbox-v2';
 const LEGACY_SAVE_KEY = 'stellar-echo-sandbox-v1';
 const urlParams = new URLSearchParams(window.location.search);
@@ -170,13 +191,24 @@ const resources = {
   energyCube: { label: '能量矩阵', color: '#f5c85b', image: 'energyCube', form: 'solid', tier: 3 },
   structureCube: { label: '结构矩阵', color: '#e894e8', image: 'structureCube', form: 'solid', tier: 3 },
   informationCube: { label: '信息矩阵', color: '#7ed6ff', image: 'informationCube', form: 'solid', tier: 4 },
-  stellarFrame: { label: '恒星框架组件', color: '#f5e29b', form: 'solid', tier: 5 }
+  stellarFrame: { label: '恒星框架组件', color: '#f5e29b', form: 'solid', tier: 5 },
+  gear: { label: '齿轮', color: '#d9b77c', form: 'solid', tier: 1 },
+  magneticCoil: { label: '磁线圈', color: '#d783ff', form: 'solid', tier: 2 },
+  circuitBoard: { label: '电路板', color: '#79d6a2', form: 'solid', tier: 2 },
+  glass: { label: '玻璃', color: '#9feaff', form: 'solid', tier: 2 },
+  motor: { label: '电动机', color: '#f1a45e', form: 'solid', tier: 3 },
+  turbine: { label: '涡轮机', color: '#c2e0ff', form: 'solid', tier: 3 },
+  particleContainer: { label: '粒子容器', color: '#f6d86b', form: 'solid', tier: 4 },
+  solarSail: { label: '太阳帆', color: '#f7f0ae', form: 'solid', tier: 4 },
+  structureRocket: { label: '结构火箭', color: '#ffbd81', form: 'solid', tier: 5 },
+  orbitNode: { label: '轨道节点', color: '#bff5de', form: 'solid', tier: 5 }
 };
 
 const sorterRouteCatalog = [
   'iron', 'copper', 'silicon', 'coal', 'crudeOil', 'water', 'naturalGas', 'ice', 'titanium',
   'ironIngot', 'copperIngot', 'siliconWafer', 'processor',
-  'electromagneticCube', 'energyCube', 'structureCube', 'informationCube'
+  'electromagneticCube', 'energyCube', 'structureCube', 'informationCube',
+  'gear', 'magneticCoil', 'circuitBoard', 'glass', 'motor', 'turbine', 'particleContainer', 'solarSail', 'structureRocket', 'orbitNode'
 ];
 
 const buildings = {
@@ -206,7 +238,9 @@ const buildings = {
   liquidStorage: { label: '液体仓储', size: 2, color: '#5cc8ed', power: .2, cost: { iron: 18, copper: 4 }, tech: 'fluid-storage', image: 'liquidStorage', storageForm: 'liquid' },
   gasStorage: { label: '气体仓储', size: 2, color: '#b6e7ba', power: .22, cost: { iron: 20, copper: 6, processor: 1 }, tech: 'gas-storage', image: 'gasStorage', storageForm: 'gas' },
   logisticsStation: { label: '行星物流站', size: 3, color: '#c58cff', power: 2.8, cost: { iron: 32, processor: 6, titanium: 4 }, tech: 'interstellar-logistics' },
-  stellarReceiver: { label: '恒星能量接收器', size: 2, color: '#f5e29b', power: .6, generation: 10, cost: { iron: 28, processor: 4, stellarFrame: 2 }, tech: 'dyson-frame' }
+  stellarReceiver: { label: '恒星能量接收器', size: 2, color: '#f5e29b', power: .6, generation: 10, cost: { iron: 28, processor: 4, orbitNode: 2 }, tech: 'dyson-frame' },
+  solarSailLauncher: { label: '太阳帆发射台', size: 3, color: '#f7e69c', power: 3.8, cost: { iron: 30, processor: 4, structureCube: 4 }, tech: 'orbital-construction' },
+  structureLauncher: { label: '结构火箭发射台', size: 3, color: '#ffb879', power: 4.8, cost: { iron: 36, processor: 6, titanium: 4, structureCube: 4 }, tech: 'orbital-construction' }
 };
 
 const cubeRecipes = {
@@ -215,6 +249,21 @@ const cubeRecipes = {
   structureCube: { label: '结构矩阵', color: '#e894e8', time: 3.2, inputs: { ironIngot: 1, processor: 1 } },
   informationCube: { label: '信息矩阵', color: '#7ed6ff', time: 4.2, inputs: { energyCube: 1, structureCube: 1 } }
 };
+
+const assemblyRecipes = {
+  processor: { label: '芯片', output: 'processor', time: 3.2, tier: 2, tech: 'automated-smelting', inputs: { copperIngot: 1, siliconWafer: 1 } },
+  gear: { label: '齿轮', output: 'gear', time: 1.8, tier: 1, tech: 'automated-smelting', inputs: { ironIngot: 2 } },
+  magneticCoil: { label: '磁线圈', output: 'magneticCoil', time: 2.6, tier: 2, tech: 'advanced-materials', inputs: { copperIngot: 2, ironIngot: 1 } },
+  circuitBoard: { label: '电路板', output: 'circuitBoard', time: 2.8, tier: 2, tech: 'advanced-materials', inputs: { copperIngot: 2, siliconWafer: 2 } },
+  glass: { label: '玻璃', output: 'glass', time: 2.4, tier: 2, tech: 'advanced-materials', inputs: { siliconWafer: 2, coal: 1 } },
+  motor: { label: '电动机', output: 'motor', time: 4.2, tier: 3, tech: 'advanced-materials', inputs: { gear: 1, magneticCoil: 1, circuitBoard: 1 } },
+  turbine: { label: '涡轮机', output: 'turbine', time: 4.8, tier: 3, tech: 'advanced-materials', inputs: { motor: 1, magneticCoil: 2 } },
+  particleContainer: { label: '粒子容器', output: 'particleContainer', time: 5.4, tier: 4, tech: 'stellar-fabrication', inputs: { titanium: 1, processor: 1, magneticCoil: 1 } },
+  solarSail: { label: '太阳帆', output: 'solarSail', time: 4.5, tier: 4, tech: 'stellar-fabrication', inputs: { glass: 1, siliconWafer: 1, processor: 1 } },
+  structureRocket: { label: '结构火箭', output: 'structureRocket', time: 7.2, tier: 5, tech: 'stellar-fabrication', inputs: { titanium: 2, motor: 1, particleContainer: 1, structureCube: 1 } },
+  orbitNode: { label: '轨道节点', output: 'orbitNode', time: 8.4, tier: 5, tech: 'orbital-construction', inputs: { structureRocket: 1, solarSail: 1, structureCube: 2 } }
+};
+const assemblyRecipeOrder = Object.keys(assemblyRecipes);
 
 const techTree = {
   mainline: [
@@ -234,6 +283,9 @@ const techTree = {
     { id: 'oil-processing', label: '石化开采', short: '能源分支', description: '从原油渗流区建立压力开采。', requires: ['planetary-logistics'], cube: 'energyCube', cost: 16, unlocks: ['oilExtractor'], effectText: '解锁石油提取机' },
     { id: 'workbench-tech', label: '精密工作台', short: '制造分支', description: '允许小批量制造电路与研究组件。', cube: 'electromagneticCube', cost: 8, unlocks: ['workbench'], upgrades: ['workbench'], upgradeTier: 2, effectText: '解锁工作台 · 工作台速度 +27%' },
     { id: 'advanced-assembly', label: '高级组装', short: '制造分支', description: '为处理器和矩阵生产提供更高效率。', requires: ['automated-smelting'], cube: 'structureCube', cost: 18, upgrades: ['assembler', 'workbench'], upgradeTier: 3, effectText: '组装机与工作台速度 +30%' },
+    { id: 'advanced-materials', label: '复合材料', short: '制造分支', description: '把金属、硅和流体加工成电路板、线圈、电动机等二级工业材料。', requires: ['advanced-assembly'], cube: 'structureCube', cost: 24, effectText: '开放齿轮、线圈、电路板、玻璃、电动机和涡轮机配方' },
+    { id: 'stellar-fabrication', label: '恒星制造', short: '恒星分支', description: '把异星钛和复合材料加工成粒子容器、太阳帆与结构火箭。', requires: ['advanced-materials', 'stellar-network'], cube: 'informationCube', cost: 42, effectText: '开放粒子容器、太阳帆和结构火箭配方' },
+    { id: 'orbital-construction', label: '轨道施工', short: '恒星分支', description: '授权太阳帆发射台与结构火箭发射台，让生产线真正把组件送上恒星轨道。', requires: ['stellar-fabrication', 'dyson-frame'], cube: 'informationCube', cost: 56, unlocks: ['solarSailLauncher', 'structureLauncher'], effectText: '开放轨道节点配方、太阳帆发射台与结构火箭发射台' },
     { id: 'mining-mk2', label: '高压采掘', short: '工业分支', description: '升级采矿机钻头与排矿节拍，减少矿脉等待时间。', requires: ['planetary-logistics'], cube: 'energyCube', cost: 18, upgrades: ['miner'], upgradeTier: 2, effectText: '采矿机速度 +35%' },
     { id: 'power-transmission', label: '远距输电', short: '能源分支', description: '用高压线圈延长电力塔的传输半径，允许多个局部电网稳定互联。', requires: ['thermal-power'], cube: 'energyCube', cost: 18, unlocks: ['longPowerTower'], effectText: '解锁远距离电力塔 · 基础电塔覆盖范围 +15%' },
     { id: 'power-grid-mk2', label: '电网增容', short: '能源分支', description: '升级发电设施的能量转换模块，提高整个生存电网的余量。', requires: ['thermal-power'], cube: 'structureCube', cost: 24, upgrades: ['wind', 'thermal'], upgradeTier: 2, effectText: '风力与火力发电机输出 +25%' },
@@ -255,8 +307,8 @@ const foundationTech = { id: 'foundation', label: '基础工业授权', short: '
 const techNodes = [foundationTech, ...techTree.mainline, ...techTree.branches];
 const techById = Object.fromEntries(techNodes.map(tech => [tech.id, tech]));
 const startingTech = ['foundation'];
-const startingInventory = { iron: 72, copper: 28, silicon: 16, coal: 4, crudeOil: 0, water: 0, naturalGas: 0, titanium: 0, ironIngot: 4, copperIngot: 4, siliconWafer: 4, processor: 6, electromagneticCube: 0, energyCube: 0, structureCube: 0, informationCube: 0, stellarFrame: 0 };
-const startingStorageStock = { iron: 96, copper: 48, silicon: 32, coal: 8, titanium: 0, ironIngot: 4, copperIngot: 6, siliconWafer: 6, processor: 8, electromagneticCube: 0, energyCube: 0, structureCube: 0, informationCube: 0, stellarFrame: 0 };
+const startingInventory = { iron: 72, copper: 28, silicon: 16, coal: 4, crudeOil: 0, water: 0, naturalGas: 0, titanium: 0, ironIngot: 4, copperIngot: 4, siliconWafer: 4, processor: 6, electromagneticCube: 0, energyCube: 0, structureCube: 0, informationCube: 0, stellarFrame: 0, gear: 0, magneticCoil: 0, circuitBoard: 0, glass: 0, motor: 0, turbine: 0, particleContainer: 0, solarSail: 0, structureRocket: 0, orbitNode: 0 };
+const startingStorageStock = { iron: 96, copper: 48, silicon: 32, coal: 8, titanium: 0, ironIngot: 4, copperIngot: 6, siliconWafer: 6, processor: 8, electromagneticCube: 0, energyCube: 0, structureCube: 0, informationCube: 0, stellarFrame: 0, gear: 0, magneticCoil: 0, circuitBoard: 0, glass: 0, motor: 0, turbine: 0, particleContainer: 0, solarSail: 0, structureRocket: 0, orbitNode: 0 };
 const startingKits = {
   miner: 1,
   smelter: 1,
@@ -276,6 +328,8 @@ const startingKits = {
   gasTurbine: 0,
   logisticsStation: 0,
   stellarReceiver: 0,
+  solarSailLauncher: 0,
+  structureLauncher: 0,
   longPowerTower: 0,
   ultraPowerTower: 0,
   belt: 8
@@ -299,6 +353,8 @@ const kitDescriptions = {
   gasTurbine: '消耗天然气，输出稳定电力。',
   logisticsStation: '建立跨星球货运与资源回收节点。',
   stellarReceiver: '框架完成后收集恒星能量，并把它转化为本地电网的稳定发电。',
+  solarSailLauncher: '消耗太阳帆，把恒星光压转成轨道组件。',
+  structureLauncher: '消耗结构火箭，把承力节点送入恒星轨道。',
   longPowerTower: '扩大输电半径，连接更远的局部电网。',
   ultraPowerTower: '建立超远距离骨干输电网络。'
 };
@@ -433,6 +489,7 @@ function makeInterstellarState(savedState = null) {
   return {
     selectedPlanet: savedState?.selectedPlanet || 'forge',
     cargo: savedState?.cargo || 'processor',
+    returnCargo: savedState?.returnCargo || 'titanium',
     route: savedState?.route || null,
     completedTrips: Number.isFinite(savedState?.completedTrips) ? savedState.completedTrips : 0,
     log: Array.isArray(savedState?.log) ? savedState.log.slice(-8) : [],
@@ -441,9 +498,24 @@ function makeInterstellarState(savedState = null) {
 }
 
 function makeStellarProject(savedState = null) {
+  const legacyModules = Number.isFinite(savedState?.modules) ? savedState.modules : 0;
+  const components = Array.isArray(savedState?.components)
+    ? savedState.components.filter(component => component && component.type).map(component => ({
+      id: component.id || `orbit-component-${Math.random().toString(36).slice(2, 8)}`,
+      type: component.type,
+      remaining: Math.max(0, Number(component.remaining) || 0),
+      maxLifetime: Math.max(1, Number(component.maxLifetime) || 240)
+    }))
+    : [];
   return {
     progress: Number.isFinite(savedState?.progress) ? clamp(savedState.progress, 0, 100) : 0,
-    modules: Number.isFinite(savedState?.modules) ? savedState.modules : 0,
+    modules: legacyModules,
+    components,
+    nodesDeployed: Number.isFinite(savedState?.nodesDeployed) ? savedState.nodesDeployed : 0,
+    sailsDeployed: Number.isFinite(savedState?.sailsDeployed) ? savedState.sailsDeployed : 0,
+    rocketsDeployed: Number.isFinite(savedState?.rocketsDeployed) ? savedState.rocketsDeployed : 0,
+    stabilitySeconds: Number.isFinite(savedState?.stabilitySeconds) ? Math.max(0, savedState.stabilitySeconds) : 0,
+    targetEnergy: Number.isFinite(savedState?.targetEnergy) ? Math.max(600, savedState.targetEnergy) : 600,
     energyStored: Number.isFinite(savedState?.energyStored) ? Math.max(0, savedState.energyStored) : 0,
     energyCollected: Number.isFinite(savedState?.energyCollected) ? Math.max(0, savedState.energyCollected) : 0,
     energyRate: 0
@@ -461,7 +533,9 @@ function makeBuilding(type, x, y, rotation = 0) {
     baseHub: ['storage', 'solidStorage'].includes(type) ? false : undefined,
     sorterRules: type === 'sorter' ? {} : undefined,
     routeCursor: type === 'sorter' ? 0 : undefined,
-    sorterMode: type === 'sorter' ? 'input' : undefined
+    sorterMode: type === 'sorter' ? 'input' : undefined,
+    recipeId: ['assembler', 'workbench'].includes(type) ? 'processor' : undefined,
+    fuelTimer: 0
   };
 }
 
@@ -576,9 +650,11 @@ function isInsideWorld(cell) {
     && cell.y >= WORLD_BOUNDS.minY && cell.y <= WORLD_BOUNDS.maxY;
 }
 
-function terrainAt(cell) {
+function terrainAt(cell, planetId = null) {
   if (!isInsideWorld(cell)) return { kind: 'void', label: '地图边界', short: '边界' };
-  return terrainRegions.find(region => cell.x >= region.minX && cell.x <= region.maxX && cell.y >= region.minY && cell.y <= region.maxY)
+  const currentPlanet = planetId || (typeof state !== 'undefined' ? state.activePlanet : 'home');
+  const profile = terrainProfiles[currentPlanet] || terrainRegions;
+  return profile.find(region => cell.x >= region.minX && cell.x <= region.maxX && cell.y >= region.minY && cell.y <= region.maxY)
     || { kind: 'plain', label: '稳定平原', short: '平原' };
 }
 
@@ -618,6 +694,8 @@ function normalizeSavedBuildings(savedBuildings) {
       sorterRules: building.type === 'sorter' ? { ...(building.sorterRules || {}) } : undefined,
       routeCursor: building.type === 'sorter' ? Math.max(0, Number.isInteger(building.routeCursor) ? building.routeCursor : 0) : undefined,
       sorterMode: building.type === 'sorter' ? (building.sorterMode === 'output' ? 'output' : 'input') : undefined,
+      recipeId: ['assembler', 'workbench'].includes(building.type) && assemblyRecipes[building.recipeId] ? building.recipeId : ['assembler', 'workbench'].includes(building.type) ? 'processor' : undefined,
+      fuelTimer: Number.isFinite(building.fuelTimer) ? Math.max(0, building.fuelTimer) : 0,
       constructionKit: true,
       gridEnabled: isPowerTowerType(building.type) ? building.gridEnabled !== false : undefined,
       baseHub: ['storage', 'solidStorage'].includes(building.type) ? building.baseHub === true : undefined
@@ -803,7 +881,7 @@ const dockCategoryByTool = Object.freeze({
   belt: 'logistics', sorter: 'logistics', logisticsStation: 'logistics',
   smelter: 'manufacture', assembler: 'manufacture', workbench: 'manufacture',
   researchLab: 'research',
-  wind: 'power', thermal: 'power', gasTurbine: 'power', powerTower: 'power', longPowerTower: 'power', ultraPowerTower: 'power',
+  wind: 'power', thermal: 'power', gasTurbine: 'power', stellarReceiver: 'power', solarSailLauncher: 'power', structureLauncher: 'power', powerTower: 'power', longPowerTower: 'power', ultraPowerTower: 'power',
   storage: 'storage', solidStorage: 'storage', liquidStorage: 'storage', gasStorage: 'storage'
 });
 const dockCategories = new Set(['tools', 'extract', 'logistics', 'manufacture', 'research', 'power', 'storage']);

@@ -145,7 +145,7 @@ let terrainLayerSignature = '';
 function drawGround() {
   const { width, height } = state.viewport;
   const tileSize = TILE * state.zoom;
-  const signature = `${width}|${height}|${state.camera.x}|${state.camera.y}|${state.zoom}|${state.tool === 'belt'}`;
+  const signature = `${state.activePlanet}|${width}|${height}|${state.camera.x}|${state.camera.y}|${state.zoom}|${state.tool === 'belt'}`;
   if (signature !== terrainLayerSignature) {
     terrainLayerSignature = signature;
     if (!terrainLayerCache || terrainLayerCache.width !== width || terrainLayerCache.height !== height) {

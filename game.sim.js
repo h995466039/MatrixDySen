@@ -151,6 +151,23 @@ function labProductionCube(building) {
   return targetCube;
 }
 
+function assemblyRecipeFor(building) {
+  const recipeId = assemblyRecipes[building?.recipeId] ? building.recipeId : 'processor';
+  const recipe = assemblyRecipes[recipeId] || assemblyRecipes.processor;
+  return {
+    ...recipe,
+    time: getAssemblyTime(building) * (recipe.time / assemblyRecipes.processor.time)
+  };
+}
+
+function stellarComponentsReady() {
+  const components = state.stellarProject?.components || [];
+  return components.length > 0
+    && components.some(component => component.type === 'node')
+    && components.some(component => component.type === 'sail')
+    && components.some(component => component.type === 'rocket');
+}
+
 function placementCheck(type, cell) {
   const meta = buildings[type];
   if (!meta) return { valid: false, reason: '未知设施' };
@@ -398,8 +415,12 @@ function acceptsBuildingResource(building, resource) {
     // silently filling with three ores while producing none of them reliably.
     return ['copper', 'iron', 'silicon'].includes(resource) && (!building.recipeResource || building.recipeResource === resource);
   }
-  if (building.type === 'assembler') return ['copperIngot', 'siliconWafer'].includes(resource) || resource === 'water';
-  if (building.type === 'workbench') return ['ironIngot', 'copperIngot', 'siliconWafer'].includes(resource) || resource === 'crudeOil';
+  if (building.type === 'assembler' || building.type === 'workbench') {
+    const recipe = assemblyRecipeFor(building);
+    return Object.prototype.hasOwnProperty.call(recipe.inputs, resource)
+      || (building.type === 'assembler' && resource === 'water')
+      || (building.type === 'workbench' && resource === 'crudeOil');
+  }
   if (building.type === 'thermal') return resource === 'coal';
   if (['waterPump', 'oilExtractor', 'gasExtractor'].includes(building.type)) return false;
   if (building.type === 'gasTurbine') return resource === 'naturalGas';
@@ -501,8 +522,7 @@ function warehouseResourceNeedScore(destination, resource) {
   let required = 0;
   if (destination.type === 'researchLab') required = cubeRecipes[labProductionCube(destination)]?.inputs?.[resource] || 0;
   else if (destination.type === 'smelter') required = destination.recipeResource === resource ? 1 : 0;
-  else if (destination.type === 'assembler') required = ({ copperIngot: 1, siliconWafer: 1 })[resource] || 0;
-  else if (destination.type === 'workbench') required = ({ ironIngot: 1, copperIngot: 1 })[resource] || 0;
+  else if (destination.type === 'assembler' || destination.type === 'workbench') required = assemblyRecipeFor(destination).inputs[resource] || 0;
   else if (destination.type === 'thermal') required = resource === 'coal' ? 1 : 0;
   if (required > current) return 0;
   return 1 + current / Math.max(1, inputCapacity(destination));
@@ -745,7 +765,7 @@ function rebuildPowerGrids() {
 
 function getPowerGeneration(building) {
   if (!isBuildingOperational(building)) return 0;
-  if (building.type === 'stellarReceiver' && (state.stellarProject?.progress || 0) < 100) return 0;
+  if (building.type === 'stellarReceiver' && ((state.stellarProject?.progress || 0) < 100 || !stellarComponentsReady())) return 0;
   const base = buildings[building.type]?.generation || 0;
   const careerMultiplier = activeCareerEffect('power') ? 1.2 : 1;
   const gridMultiplier = isTechUnlocked('power-grid-mk2') ? 1.25 : 1;
@@ -875,9 +895,7 @@ function simulateBuildings(dt) {
 
     if ((building.type === 'assembler' || building.type === 'workbench') && powerState.powered) {
       if (Object.values(building.output).reduce((sum, amount) => sum + amount, 0) >= outputCapacity(building)) return;
-      const recipe = building.type === 'workbench'
-        ? { inputs: { ironIngot: 1, copperIngot: 1 }, output: 'processor', time: getAssemblyTime(building) }
-        : { inputs: { copperIngot: 1, siliconWafer: 1 }, output: 'processor', time: getAssemblyTime(building) };
+      const recipe = assemblyRecipeFor(building);
       if (!hasRecipeInputs(building.input, recipe)) return;
       const assemblyCatalyst = catalystBoostFor(building);
       building.process += dt * efficiency;
@@ -889,6 +907,18 @@ function simulateBuildings(dt) {
         }
         building.output[recipe.output] = (building.output[recipe.output] || 0) + 1;
         noteProduced(recipe.output, 1, building.id);
+      }
+    }
+
+    if (['solarSailLauncher', 'structureLauncher'].includes(building.type) && powerState.powered) {
+      const inputResource = building.type === 'solarSailLauncher' ? 'solarSail' : 'structureRocket';
+      if ((building.input[inputResource] || 0) > 0) {
+        building.process = (building.process || 0) + dt * efficiency;
+        if (building.process >= (building.type === 'solarSailLauncher' ? 4.5 : 7.5)) {
+          building.process = 0;
+          building.input[inputResource] -= 1;
+          deployStellarComponent(building.type === 'solarSailLauncher' ? 'sail' : 'rocket');
+        }
       }
     }
 
@@ -992,16 +1022,33 @@ function simulateStellarEnergy(dt) {
   const project = state.stellarProject;
   if (!project) return;
   project.energyRate = 0;
-  if (project.progress < 100) return;
+  const components = Array.isArray(project.components) ? project.components : [];
+  components.forEach(component => { component.remaining = Math.max(0, component.remaining - dt); });
+  const expired = components.filter(component => component.remaining <= 0);
+  if (expired.length) {
+    project.components = components.filter(component => component.remaining > 0);
+    project.stabilitySeconds = 0;
+    showToast(`轨道组件脱落 · ${expired.length} 件需要补发或维修`, 'warning');
+  }
+  const activeComponents = project.components || [];
+  project.sailsDeployed = activeComponents.filter(component => component.type === 'sail').length;
+  project.rocketsDeployed = activeComponents.filter(component => component.type === 'rocket').length;
+  project.nodesDeployed = activeComponents.filter(component => component.type === 'node').length;
+  project.progress = clamp(project.nodesDeployed / 20 * 100, 0, 100);
+  if (project.progress < 100 || !stellarComponentsReady()) {
+    project.stabilitySeconds = 0;
+    return;
+  }
   const rate = state.buildings.reduce((total, building) => {
     if (building.type !== 'stellarReceiver' || !isBuildingOperational(building)) return total;
     const grid = getGridPowerState(building);
     if (!grid.grid || grid.grid.blackout) return total;
     return total + getPowerGeneration(building) * grid.efficiency;
   }, 0);
-  project.energyRate = rate;
-  project.energyStored = Math.max(0, (project.energyStored || 0) + rate * dt);
-  project.energyCollected = Math.max(0, (project.energyCollected || 0) + rate * dt);
+  project.energyRate = rate * Math.min(1, activeComponents.length / 24);
+  if (project.energyRate > 0) project.stabilitySeconds = (project.stabilitySeconds || 0) + dt;
+  project.energyStored = Math.max(0, (project.energyStored || 0) + project.energyRate * dt);
+  project.energyCollected = Math.max(0, (project.energyCollected || 0) + project.energyRate * dt);
 }
 
 function simulateResearch(dt) {
