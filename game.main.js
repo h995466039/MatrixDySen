@@ -205,6 +205,14 @@ canvas.addEventListener('pointerup', event => {
   state.pointer.startBuildingId = null;
 });
 canvas.addEventListener('pointerleave', () => { if (!state.pointer.down) state.pointer.cell = null; });
+window.addEventListener('pointerup', () => {
+  // 兜底：在画布外释放指针时（拖拽/平移越过画布边缘、释放到面板上），避免状态残留
+  state.pointer.down = false;
+  state.pointer.panning = false;
+  state.pointer.startCell = null;
+  state.pointer.startBuildingId = null;
+  state.pointer.sorterAnchor = null;
+});
 canvas.addEventListener('wheel', event => {
   event.preventDefault();
   const oldZoom = state.zoom;

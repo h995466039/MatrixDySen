@@ -855,6 +855,14 @@ function simulateBuildings(dt) {
     if (nextBelt) {
       item.beltId = nextBelt.id;
       item.progress = 0;
+      item._stalled = 0;
+      item._hops = (item._hops || 0) + 1;
+      if (item._hops >= 80) {
+        // 环路或长期周转始终送不到目的地：回收为随身货物，避免永动+占死分拣器在途槽位
+        state.inventory[item.resource] = (state.inventory[item.resource] || 0) + 1;
+        showToast(`周转货物回收 · ${resources[item.resource]?.label || item.resource} ×1 已转入随身库存`, 'warning');
+        return false;
+      }
       return true;
     }
     // 终端滞留：重试 40 秒后仍未消化，回收为随身货物，释放阻塞点
