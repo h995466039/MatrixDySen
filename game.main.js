@@ -58,6 +58,7 @@ query('#close-selection').addEventListener('click', () => cancelToolSelection())
 query('#selection-recipe').addEventListener('click', () => {
   const building = state.buildings.find(entry => entry.id === state.selectedId);
   if (building && building.type === 'smelter') cycleSmelterRecipe(building);
+  if (building && (building.type === 'assembler' || building.type === 'workbench')) cycleAssemblyRecipe(building);
 });
 query('#selection-grid-action').addEventListener('click', () => {
   const building = state.buildings.find(entry => entry.id === state.selectedId);
@@ -273,7 +274,7 @@ canvas.addEventListener('wheel', event => {
   if (oldZoom !== state.zoom) showToast(`视野缩放 · ${Math.round(state.zoom * 100)}%`);
 }, { passive: false });
 
-const toolHotkeys = { q: 'sorter', e: 'solidStorage', f: 'researchLab', g: 'wind', h: 'thermal', j: 'gasTurbine', k: 'stellarReceiver', z: 'workbench', x: 'oilExtractor', v: 'gasExtractor', y: 'liquidStorage', u: 'gasStorage', i: 'logisticsStation' };
+const toolHotkeys = { q: 'sorter', e: 'solidStorage', f: 'researchLab', g: 'wind', h: 'thermal', j: 'gasTurbine', k: 'stellarReceiver', z: 'workbench', x: 'oilExtractor', v: 'gasExtractor', y: 'liquidStorage', u: 'gasStorage', i: 'logisticsStation', l: 'solarSailLauncher', n: 'structureLauncher' };
 
 document.addEventListener('keydown', event => {
   if (event.target.tagName === 'INPUT') return;

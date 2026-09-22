@@ -264,6 +264,9 @@ const assemblyRecipes = {
   orbitNode: { label: '轨道节点', output: 'orbitNode', time: 8.4, tier: 5, tech: 'orbital-construction', inputs: { structureRocket: 1, solarSail: 1, structureCube: 2 } }
 };
 const assemblyRecipeOrder = Object.keys(assemblyRecipes);
+const workbenchAssemblyRecipes = ['gear', 'magneticCoil', 'circuitBoard', 'glass'];
+const assemblerAssemblyRecipes = ['processor', 'motor', 'turbine', 'particleContainer', 'solarSail', 'structureRocket', 'orbitNode'];
+const ORBIT_COMPONENT_LIFETIME = { node: 1800, sail: 600, rocket: 600 };
 
 const techTree = {
   mainline: [
@@ -499,21 +502,34 @@ function makeInterstellarState(savedState = null) {
 
 function makeStellarProject(savedState = null) {
   const legacyModules = Number.isFinite(savedState?.modules) ? savedState.modules : 0;
-  const components = Array.isArray(savedState?.components)
+  let components = Array.isArray(savedState?.components)
     ? savedState.components.filter(component => component && component.type).map(component => ({
       id: component.id || `orbit-component-${Math.random().toString(36).slice(2, 8)}`,
       type: component.type,
       remaining: Math.max(0, Number(component.remaining) || 0),
-      maxLifetime: Math.max(1, Number(component.maxLifetime) || 240)
+      maxLifetime: Math.max(1, Number(component.maxLifetime) || (ORBIT_COMPONENT_LIFETIME[component.type] || 240))
     }))
     : [];
+  // 旧档只有模块计数：按节点组件迁移，保证老存档的接收器仍可供电。
+  if (!components.length && legacyModules > 0) {
+    const migrated = Math.min(legacyModules, 20);
+    for (let index = 0; index < migrated; index += 1) {
+      components.push({
+        id: `orbit-node-legacy-${index}`,
+        type: 'node',
+        remaining: ORBIT_COMPONENT_LIFETIME.node,
+        maxLifetime: ORBIT_COMPONENT_LIFETIME.node
+      });
+    }
+  }
+  const nodesDeployed = components.filter(component => component.type === 'node').length;
   return {
-    progress: Number.isFinite(savedState?.progress) ? clamp(savedState.progress, 0, 100) : 0,
+    progress: clamp(nodesDeployed / 20 * 100, 0, 100),
     modules: legacyModules,
     components,
-    nodesDeployed: Number.isFinite(savedState?.nodesDeployed) ? savedState.nodesDeployed : 0,
-    sailsDeployed: Number.isFinite(savedState?.sailsDeployed) ? savedState.sailsDeployed : 0,
-    rocketsDeployed: Number.isFinite(savedState?.rocketsDeployed) ? savedState.rocketsDeployed : 0,
+    nodesDeployed,
+    sailsDeployed: components.filter(component => component.type === 'sail').length,
+    rocketsDeployed: components.filter(component => component.type === 'rocket').length,
     stabilitySeconds: Number.isFinite(savedState?.stabilitySeconds) ? Math.max(0, savedState.stabilitySeconds) : 0,
     targetEnergy: Number.isFinite(savedState?.targetEnergy) ? Math.max(600, savedState.targetEnergy) : 600,
     energyStored: Number.isFinite(savedState?.energyStored) ? Math.max(0, savedState.energyStored) : 0,
@@ -534,7 +550,7 @@ function makeBuilding(type, x, y, rotation = 0) {
     sorterRules: type === 'sorter' ? {} : undefined,
     routeCursor: type === 'sorter' ? 0 : undefined,
     sorterMode: type === 'sorter' ? 'input' : undefined,
-    recipeId: ['assembler', 'workbench'].includes(type) ? 'processor' : undefined,
+    recipeId: type === 'assembler' ? 'processor' : type === 'workbench' ? 'gear' : undefined,
     fuelTimer: 0
   };
 }
@@ -694,7 +710,9 @@ function normalizeSavedBuildings(savedBuildings) {
       sorterRules: building.type === 'sorter' ? { ...(building.sorterRules || {}) } : undefined,
       routeCursor: building.type === 'sorter' ? Math.max(0, Number.isInteger(building.routeCursor) ? building.routeCursor : 0) : undefined,
       sorterMode: building.type === 'sorter' ? (building.sorterMode === 'output' ? 'output' : 'input') : undefined,
-      recipeId: ['assembler', 'workbench'].includes(building.type) && assemblyRecipes[building.recipeId] ? building.recipeId : ['assembler', 'workbench'].includes(building.type) ? 'processor' : undefined,
+      recipeId: building.type === 'assembler' || building.type === 'workbench'
+        ? (assemblyRecipes[building.recipeId] ? building.recipeId : building.type === 'workbench' ? 'gear' : 'processor')
+        : undefined,
       fuelTimer: Number.isFinite(building.fuelTimer) ? Math.max(0, building.fuelTimer) : 0,
       constructionKit: true,
       gridEnabled: isPowerTowerType(building.type) ? building.gridEnabled !== false : undefined,

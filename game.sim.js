@@ -91,6 +91,39 @@ function storageHintFor(usedResources) {
 
 const smelterRecipeOptions = [null, 'iron', 'copper', 'silicon'];
 
+function assemblyRecipesForBuilding(building) {
+  const ids = building?.type === 'assembler' ? assemblerAssemblyRecipes : building?.type === 'workbench' ? workbenchAssemblyRecipes : [];
+  return ids.map(id => assemblyRecipes[id]).filter(Boolean);
+}
+
+function assemblyRecipeFor(building) {
+  const allowed = assemblyRecipesForBuilding(building);
+  const selected = allowed.find(recipe => recipe.output === assemblyRecipes[building?.recipeId]?.output) || allowed[0];
+  const recipe = selected || assemblyRecipes.processor;
+  return {
+    ...recipe,
+    time: getAssemblyTime(building) * (recipe.time / assemblyRecipes.processor.time)
+  };
+}
+
+function assemblyRecipeUnlocked(building, recipe) {
+  return recipe ? isTechUnlocked(recipe.tech) : false;
+}
+
+function cycleAssemblyRecipe(building) {
+  if (!building || !['assembler', 'workbench'].includes(building.type)) return;
+  const options = assemblyRecipesForBuilding(building);
+  if (!options.length) return;
+  const current = options.find(recipe => recipe.output === assemblyRecipes[building.recipeId]?.output) || options[0];
+  const next = options[(options.indexOf(current) + 1) % options.length];
+  building.recipeId = next.output;
+  building.process = 0;
+  saveGame();
+  showToast(`${next.label} 配方已选择${assemblyRecipeUnlocked(building, next) ? '' : ` · 需要「${techById[next.tech]?.label || '对应科技'}」`}`);
+  updateHUD();
+  render();
+}
+
 function cycleSmelterRecipe(building) {
   if (!building || building.type !== 'smelter') return;
   const current = building.recipeResource || null;
@@ -417,10 +450,13 @@ function acceptsBuildingResource(building, resource) {
   }
   if (building.type === 'assembler' || building.type === 'workbench') {
     const recipe = assemblyRecipeFor(building);
+    if (!assemblyRecipeUnlocked(building, recipe)) return false;
     return Object.prototype.hasOwnProperty.call(recipe.inputs, resource)
       || (building.type === 'assembler' && resource === 'water')
       || (building.type === 'workbench' && resource === 'crudeOil');
   }
+  if (building.type === 'solarSailLauncher') return resource === 'solarSail';
+  if (building.type === 'structureLauncher') return resource === 'structureRocket';
   if (building.type === 'thermal') return resource === 'coal';
   if (['waterPump', 'oilExtractor', 'gasExtractor'].includes(building.type)) return false;
   if (building.type === 'gasTurbine') return resource === 'naturalGas';
@@ -523,6 +559,8 @@ function warehouseResourceNeedScore(destination, resource) {
   if (destination.type === 'researchLab') required = cubeRecipes[labProductionCube(destination)]?.inputs?.[resource] || 0;
   else if (destination.type === 'smelter') required = destination.recipeResource === resource ? 1 : 0;
   else if (destination.type === 'assembler' || destination.type === 'workbench') required = assemblyRecipeFor(destination).inputs[resource] || 0;
+  else if (destination.type === 'solarSailLauncher') required = resource === 'solarSail' ? 1 : 0;
+  else if (destination.type === 'structureLauncher') required = resource === 'structureRocket' ? 1 : 0;
   else if (destination.type === 'thermal') required = resource === 'coal' ? 1 : 0;
   if (required > current) return 0;
   return 1 + current / Math.max(1, inputCapacity(destination));
@@ -896,6 +934,7 @@ function simulateBuildings(dt) {
     if ((building.type === 'assembler' || building.type === 'workbench') && powerState.powered) {
       if (Object.values(building.output).reduce((sum, amount) => sum + amount, 0) >= outputCapacity(building)) return;
       const recipe = assemblyRecipeFor(building);
+      if (!assemblyRecipeUnlocked(building, recipe)) return;
       if (!hasRecipeInputs(building.input, recipe)) return;
       const assemblyCatalyst = catalystBoostFor(building);
       building.process += dt * efficiency;
@@ -1034,7 +1073,7 @@ function simulateStellarEnergy(dt) {
   project.sailsDeployed = activeComponents.filter(component => component.type === 'sail').length;
   project.rocketsDeployed = activeComponents.filter(component => component.type === 'rocket').length;
   project.nodesDeployed = activeComponents.filter(component => component.type === 'node').length;
-  project.progress = clamp(project.nodesDeployed / 20 * 100, 0, 100);
+  project.progress = clamp(project.nodesDeployed / ORBIT_NODE_TARGET * 100, 0, 100);
   if (project.progress < 100 || !stellarComponentsReady()) {
     project.stabilitySeconds = 0;
     return;
@@ -1193,17 +1232,43 @@ function simulateInterstellar(dt) {
 }
 
 const stellarModuleCost = { structureCube: 4, titanium: 2, processor: 1 };
+const ORBIT_NODE_TARGET = 20;
+const orbitComponentLabels = { node: '轨道节点', sail: '太阳帆组件', rocket: '结构火箭组件' };
+
+function recomputeStellarCounts(project) {
+  const components = Array.isArray(project.components) ? project.components : [];
+  project.nodesDeployed = components.filter(component => component.type === 'node').length;
+  project.sailsDeployed = components.filter(component => component.type === 'sail').length;
+  project.rocketsDeployed = components.filter(component => component.type === 'rocket').length;
+  project.progress = clamp(project.nodesDeployed / ORBIT_NODE_TARGET * 100, 0, 100);
+}
+
+function deployStellarComponent(type) {
+  const project = state.stellarProject;
+  const lifetime = ORBIT_COMPONENT_LIFETIME[type] || 600;
+  project.components = project.components || [];
+  project.components.push({
+    id: `orbit-${type}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    type,
+    remaining: lifetime,
+    maxLifetime: lifetime
+  });
+  recomputeStellarCounts(project);
+  showToast(`${orbitComponentLabels[type] || type}已部署到恒星轨道 · 剩余 ${Math.round(lifetime)} 秒`);
+  updateStellarProjectUI();
+  return project;
+}
 
 function contributeStellarProject() {
   if (!isTechUnlocked('dyson-frame')) { showToast('需要完成「戴森框架」科技', 'warning'); return; }
-  if (state.stellarProject.progress >= 100) { showToast('恒星工程已完成'); return; }
+  if (state.stellarProject.nodesDeployed >= ORBIT_NODE_TARGET) { showToast('第一圈轨道节点已部署完成'); return; }
   if (!canAffordStorage(stellarModuleCost)) { showToast(`仓储材料不足 · ${formatCost(stellarModuleCost)}`, 'warning'); return; }
   takeStorageCost(stellarModuleCost);
-  state.stellarProject.progress = clamp(state.stellarProject.progress + 5, 0, 100);
   state.stellarProject.modules += 1;
+  deployStellarComponent('node');
   // 框架施工把原材料组装成恒星框架组件，作为后续部署「恒星能量接收器」的建材来源。
   putInStorage('stellarFrame', 4);
   saveGame();
-  showToast(`框架组件已部署 · ${state.stellarProject.progress}% · 恒星框架组件 +4`);
+  showToast(`轨道节点已部署 · ${state.stellarProject.progress.toFixed(0)}% · 恒星框架组件 +4`);
   updateStellarProjectUI();
 }

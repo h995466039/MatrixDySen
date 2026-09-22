@@ -4,26 +4,36 @@
 function updateStellarProjectUI() {
   const section = query('#stellar-project');
   if (!section) return;
+  const project = state.stellarProject;
   const unlocked = isTechUnlocked('dyson-frame');
-  const complete = state.stellarProject.progress >= 100;
-  const progress = state.stellarProject.progress;
+  const complete = project.progress >= 100;
+  const progress = project.progress;
+  const missing = [];
+  if (project.sailsDeployed < 1) missing.push('太阳帆组件');
+  if (project.rocketsDeployed < 1) missing.push('结构火箭组件');
   section.classList.toggle('project-locked', !unlocked);
   section.classList.toggle('project-complete', complete);
   query('#stellar-project-state').textContent = !unlocked ? '未解锁' : complete ? '已完成' : '施工中';
   query('#stellar-project-title').textContent = complete ? '第一圈戴森框架已点亮' : '戴森框架施工台';
-  query('#stellar-project-copy').textContent = !unlocked ? '完成主线科技「戴森框架」，才能把异星材料转化为恒星轨道组件。' : complete ? '恒星能量网络已建立，继续扩展将进入下一阶段。' : '从熔火-β回收钛，用结构矩阵和处理器部署轨道组件。';
+  query('#stellar-project-copy').textContent = !unlocked
+    ? '完成主线科技「戴森框架」，才能把异星材料转化为恒星轨道组件。'
+    : complete
+      ? (missing.length ? `恒星能量网络已建立，但轨道组件脱落：${missing.join('、')} 待补发。` : '恒星能量网络已建立，继续扩展将进入下一阶段。')
+      : '从熔火-β回收钛，用结构矩阵和处理器部署轨道节点，再用发射台补发太阳帆与结构火箭组件。';
   query('#stellar-project-fill').style.width = `${progress}%`;
-  query('#stellar-project-progress').textContent = `${progress} / 100 · ${state.stellarProject.modules} 个组件`;
+  query('#stellar-project-progress').textContent = `节点 ${project.nodesDeployed} / ${ORBIT_NODE_TARGET} · 太阳帆 ${project.sailsDeployed} · 结构火箭 ${project.rocketsDeployed}`;
   query('#stellar-project-supply').textContent = formatCost(stellarModuleCost);
+  const componentLine = query('#stellar-project-components');
+  if (componentLine) componentLine.textContent = !unlocked ? '解锁后开始部署轨道节点' : complete ? (missing.length ? `缺失 ${missing.length} 类组件 · ${missing.join('、')}` : '轨道组件运转中') : `框架完成前需部署 ${ORBIT_NODE_TARGET - project.nodesDeployed} 个轨道节点${missing.length ? ` · 后续需 ${missing.join('、')}` : ''}`;
   const energyReadout = query('#stellar-energy-readout');
   if (energyReadout) {
     energyReadout.textContent = !complete
-      ? '框架完成后，可部署恒星接收器收集并转化能源。'
-      : `恒星储能 ${formatNumber(Math.floor(state.stellarProject.energyStored || 0))} · 接收速率 ${(state.stellarProject.energyRate || 0).toFixed(1)} / 秒`;
+      ? '节点部署到 20 且帆/火箭组件齐备后，可部署恒星接收器收集并转化能源。'
+      : `恒星储能 ${formatNumber(Math.floor(project.energyStored || 0))} · 接收速率 ${(project.energyRate || 0).toFixed(1)} / 秒`;
   }
   const button = query('#stellar-project-button');
-  button.disabled = !unlocked || complete || !canAffordStorage(stellarModuleCost);
-  query('#stellar-project-cost').textContent = !unlocked ? '完成「戴森框架」后可用' : complete ? '恒星工程阶段完成' : button.disabled ? `材料不足 · ${formatCost(stellarModuleCost)}` : `消耗 ${formatCost(stellarModuleCost)}`;
+  button.disabled = !unlocked || complete || project.nodesDeployed >= ORBIT_NODE_TARGET || !canAffordStorage(stellarModuleCost);
+  query('#stellar-project-cost').textContent = !unlocked ? '完成「戴森框架」后可用' : complete ? '恒星工程阶段完成' : project.nodesDeployed >= ORBIT_NODE_TARGET ? '轨道节点已部署完成' : button.disabled ? `材料不足 · ${formatCost(stellarModuleCost)}` : `消耗 ${formatCost(stellarModuleCost)}`;
 }
 
 function renderCargoOptions() {
@@ -561,7 +571,8 @@ function hasInputRouteToBuilding(target, resource) {
 function processorProductionGap() {
   const producer = state.buildings.find(building => ['assembler', 'workbench'].includes(building.type));
   if (!producer) return { kind: 'assembler', output: 'processor' };
-  const inputs = producer.type === 'workbench' ? ['ironIngot', 'copperIngot'] : ['copperIngot', 'siliconWafer'];
+  const inputs = Object.keys(assemblyRecipeFor(producer).inputs);
+  const output = assemblyRecipeFor(producer).output;
   // A route can be valid while its first batch is already in the machine.
   // Prefer the live input buffer so the assistant follows the next real gap.
   const missingInput = inputs.find(resource => (producer.input?.[resource] || 0) < 1 && !hasInputRouteToBuilding(producer, resource));
@@ -572,9 +583,9 @@ function processorProductionGap() {
     // center the correct upstream machine for the player.
     const source = raw && state.buildings.find(building => building.type === 'smelter'
       && (building.recipeResource === raw || state.nodes.find(node => node.id === building.nodeId)?.resource === raw));
-    return { kind: 'assemblerInputBelt', producer, source, resource: missingInput, output: 'processor' };
+    return { kind: 'assemblerInputBelt', producer, source, resource: missingInput, output };
   }
-  if (!findBeltStartingNear(producer, 'processor')) return { kind: 'assemblerOutputBelt', producer, output: 'processor' };
+  if (!findBeltStartingNear(producer, output)) return { kind: 'assemblerOutputBelt', producer, output };
   return null;
 }
 
@@ -685,8 +696,15 @@ function buildingRecipeText(building) {
     const recipeLabel = building.recipeResource ? `${resources[building.recipeResource].label}矿` : '自动识别';
     return `${recipeLabel} → 金属锭 / 硅片 · 点击切换`;
   }
-  if (building.type === 'assembler') return `铜锭 + 硅片 → 芯片${(building.input?.water || 0) > 0 ? ' · 水冷却加速中' : ''}`;
-  if (building.type === 'workbench') return `铁锭 + 铜锭 → 芯片${(building.input?.crudeOil || 0) > 0 ? ' · 油润滑加速中' : ''}`;
+  if (building.type === 'assembler' || building.type === 'workbench') {
+    const recipe = assemblyRecipeFor(building);
+    const catalyst = building.type === 'assembler' && (building.input?.water || 0) > 0 ? ' · 水冷却加速中'
+      : building.type === 'workbench' && (building.input?.crudeOil || 0) > 0 ? ' · 油润滑加速中'
+        : '';
+    return assemblyRecipeUnlocked(building, recipe)
+      ? `${formatRecipeInputs(recipe.inputs)} → ${recipe.label}${catalyst} · 点击切换`
+      : `配方锁定 · 需要「${techById[recipe.tech]?.label || '对应科技'}」`;
+  }
   if (building.type === 'researchLab') {
     const cube = labProductionCube(building);
     const recipe = cubeRecipes[cube];
@@ -705,6 +723,7 @@ function buildingRecipeText(building) {
 
 function buildingStatus(building) {
   if (!isBuildingOperational(building)) return '科技锁定';
+  if ((building.type === 'assembler' || building.type === 'workbench') && !assemblyRecipeUnlocked(building, assemblyRecipeFor(building))) return '配方锁定';
   if (building.type === 'thermal' && (building.input.coal || 0) <= 0) return '缺煤';
   if (building.type === 'gasTurbine' && (building.input.naturalGas || 0) <= 0) return '缺气';
   const powerState = getGridPowerState(building);
@@ -764,7 +783,7 @@ function buildingProgress(building) {
     return clamp(building.timer / getMiningTime(building), 0, 1);
   }
   if (building.type === 'smelter') return clamp(building.process / getSmeltingTime(), 0, 1);
-  if (building.type === 'assembler' || building.type === 'workbench') return clamp(building.process / getAssemblyTime(building), 0, 1);
+  if (building.type === 'assembler' || building.type === 'workbench') return clamp(building.process / Math.max(.1, assemblyRecipeFor(building).time), 0, 1);
   if (building.type === 'sorter') return clamp(building.process / getSorterCycleTime(building), 0, 1);
   if (isStorageType(building)) return clamp(storageUsed(building) / Math.max(1, storageCapacity(building)), 0, 1);
   if (building.type === 'researchLab') {
@@ -778,8 +797,7 @@ function missingInputsFor(building) {
   if (!building) return [];
   let recipe = null;
   if (building.type === 'smelter') return Object.values(building.input || {}).some(amount => amount > 0) ? [] : ['原矿'];
-  if (building.type === 'assembler') recipe = { inputs: { copperIngot: 1, siliconWafer: 1 } };
-  if (building.type === 'workbench') recipe = { inputs: { ironIngot: 1, copperIngot: 1 } };
+  if (building.type === 'assembler' || building.type === 'workbench') recipe = { inputs: assemblyRecipeFor(building).inputs };
   if (building.type === 'researchLab') {
     const cube = labProductionCube(building);
     recipe = cubeRecipes[cube];
@@ -1364,10 +1382,10 @@ function updateHUD() {
     const output = Object.entries(selected.output).find(([, amount]) => amount > 0);
     const status = buildingStatus(selected);
     query('#selection-state').textContent = status;
-    query('#selection-state').style.color = ['科技锁定', '电力不足', '电网瘫痪', '电网高负载', '输出堵塞', '缺少输入', '缺少矩阵组件', '缺煤', '缺气', '未接入矿脉', '未接入水源', '未接入电网'].includes(status) ? '#ff9b3d' : '#62d69a';
+    query('#selection-state').style.color = ['科技锁定', '配方锁定', '电力不足', '电网瘫痪', '电网高负载', '输出堵塞', '缺少输入', '缺少矩阵组件', '缺煤', '缺气', '未接入矿脉', '未接入水源', '未接入电网'].includes(status) ? '#ff9b3d' : '#62d69a';
     query('#selection-output').textContent = output ? `${formatNumber(output[1])} 单位缓存` : ['miner', 'oilExtractor', 'waterPump', 'gasExtractor'].includes(selected.type) ? '采掘中 · 等待输出' : '等待产出';
     query('#selection-recipe').textContent = buildingRecipeText(selected);
-    query('#selection-recipe').style.cursor = selected.type === 'smelter' ? 'pointer' : 'default';
+    query('#selection-recipe').style.cursor = ['smelter', 'assembler', 'workbench'].includes(selected.type) ? 'pointer' : 'default';
     const selectionProduction = buildingProductionRate(selected.id);
     query('#selection-production').textContent = selectionProduction > 0 ? `≈ ${Math.round(selectionProduction)} 件 / 分` : '近一分钟无产出';
     query('#selection-tech').textContent = isBuildingUnlocked(selected.type) ? `${buildingTechName(selected.type)} · 已授权` : `需完成「${buildingTechName(selected.type)}」`;
