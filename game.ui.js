@@ -1090,7 +1090,8 @@ function toggleCraftPanel(force) {
 function updateHUD() {
   const hours = Math.floor(state.time / 3600) % 24;
   const minutes = Math.floor(state.time / 60) % 60;
-  query('#game-clock').textContent = `DAY 001 · ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  const day = Math.floor(state.time / 86400) + 1;
+  query('#game-clock').textContent = `DAY ${String(day).padStart(3, '0')} · ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
   query('#career-label').textContent = careerLabel();
   query('#career-button img').src = `output/imagegen/${state.career ? activeCareer().image : careerCatalog.logistics.image}`;
   query('#count-iron').textContent = formatNumber((state.inventory.iron || 0) + storageAmount('iron'));
