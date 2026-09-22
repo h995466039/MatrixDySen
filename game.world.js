@@ -15,7 +15,7 @@ function careerLabel() {
 
 let saveFailureNotified = false;
 function saveGame() {
-  if (qaDemoMode || qaPlaythroughMode) return;
+  if (qaDemoMode || qaPlaythroughMode || qaNormalMode) return;
   try {
   snapshotCurrentPlanet();
   localStorage.setItem(SAVE_KEY, JSON.stringify({
@@ -145,7 +145,7 @@ let terrainLayerSignature = '';
 function drawGround() {
   const { width, height } = state.viewport;
   const tileSize = TILE * state.zoom;
-  const signature = `${width}|${height}|${state.camera.x}|${state.camera.y}|${state.zoom}|${state.tool === 'belt'}`;
+  const signature = `${state.activePlanet}|${width}|${height}|${state.camera.x}|${state.camera.y}|${state.zoom}|${state.tool === 'belt'}`;
   if (signature !== terrainLayerSignature) {
     terrainLayerSignature = signature;
     if (!terrainLayerCache || terrainLayerCache.width !== width || terrainLayerCache.height !== height) {
@@ -224,6 +224,20 @@ function drawDysonConstruction() {
       ctx.beginPath(); ctx.arc(Math.cos(nodeAngle) * radius, Math.sin(nodeAngle) * radius, Math.max(1.5, state.zoom * 2), 0, Math.PI * 2); ctx.fill();
     }
   }
+  const componentCounts = { sail: 0, rocket: 0, node: 0 };
+  (state.stellarProject?.components || []).forEach(component => { componentCounts[component.type] = (componentCounts[component.type] || 0) + 1; });
+  const orbitRadius = radius * 1.22;
+  [['sail', '#f7f0ae'], ['rocket', '#ffb879']].forEach(([type, color], lane) => {
+    const count = componentCounts[type] || 0;
+    if (!count) return;
+    ctx.strokeStyle = `${color}85`;
+    ctx.lineWidth = Math.max(1, state.zoom * .8);
+    ctx.setLineDash([3, 5]);
+    ctx.beginPath();
+    ctx.arc(0, 0, orbitRadius + lane * TILE * state.zoom * .16, state.animTime * .08 + lane, state.animTime * .08 + lane + Math.min(Math.PI * 1.8, count / 12 * Math.PI * 2));
+    ctx.stroke();
+    ctx.setLineDash([]);
+  });
   ctx.restore();
 }
 
@@ -379,6 +393,10 @@ function beltSegmentsBetweenOrder(start, end, verticalFirst = false) {
       { x: start.x, y: start.y, dx: 0, dy: Math.sign(deltaY), length: Math.abs(deltaY) },
       { x: start.x, y: end.y, dx: Math.sign(deltaX), dy: 0, length: Math.abs(deltaX) + 1 }
     ];
+  }
+
+  if (deltaY === 0) {
+    return [{ x: start.x, y: start.y, dx: Math.sign(deltaX), dy: 0, length: Math.abs(deltaX) + 1 }];
   }
 
   return [
@@ -703,7 +721,7 @@ function drawBuilding(building) {
   }
 
   const status = buildingStatus(building);
-  if (['科技锁定', '电力不足', '电网瘫痪', '电网高负载', '输出堵塞', '缺少输入', '等待矩阵组件', '缺煤', '未接入水源', '未接入电网'].includes(status)) {
+  if (['科技锁定', '电力不足', '电网瘫痪', '电网高负载', '输出堵塞', '缺少输入', '等待矩阵组件', '缺煤', '缺气', '缺太阳帆', '缺结构火箭', '未接入水源', '未接入电网'].includes(status)) {
     const pulse = 1 + Math.sin(state.animTime * 4.2 + building.x * .7 + building.y) * .08;
     ctx.save();
     ctx.strokeStyle = status === '输出堵塞' ? '#ff9b3d' : '#ee6a65';

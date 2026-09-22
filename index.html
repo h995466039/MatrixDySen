@@ -97,6 +97,7 @@
         <div class="selection-line"><span>科技</span><b id="selection-tech">基础工业授权</b></div>
         <div class="selection-line"><span>许可等级</span><b id="selection-license">MK-1 · 可运行</b></div>
         <div class="selection-line"><span>升级</span><b id="selection-upgrade">暂无</b></div>
+        <div class="selection-diagnostic" id="selection-diagnostic" hidden><span class="selection-diagnostic-mark">!</span><span id="selection-diagnostic-text"></span></div>
         <div class="selection-line" id="selection-stock-line" hidden><span>仓储库存</span><b id="selection-stock">0 / 0</b></div>
         <div class="selection-line" id="selection-interface-line" hidden><span>物流接口</span><b id="selection-interface">未连接</b></div>
         <div class="selection-grid-block" id="selection-grid-line" hidden>
@@ -148,6 +149,8 @@
           <button class="tool-button advanced-tool" data-tool="thermal" data-dock-category="power" data-tech-lock="thermal-power" title="消耗煤炭，把化学能转成电力"><span class="tool-key">H</span><span class="tool-icon image-tool" data-fallback="♨"><img src="godot_game/assets/generated/building_thermal-generator_north.png" alt="" /></span><span><b>火力发电机</b><small>库存</small></span></button>
           <button class="tool-button advanced-tool" data-tool="gasTurbine" data-dock-category="power" data-tech-lock="gas-power" title="消耗天然气，输出稳定电力"><span class="tool-key">J</span><span class="tool-icon image-tool" data-fallback="♨"><img src="godot_game/assets/generated/building_gas-turbine_v01.svg" alt="" /></span><span><b>燃气轮机</b><small>库存</small></span></button>
           <button class="tool-button advanced-tool stellar-receiver-tool" data-tool="stellarReceiver" data-dock-category="power" data-tech-lock="dyson-frame" title="戴森框架完成后收集恒星能量"><span class="tool-key">K</span><span class="tool-icon" aria-hidden="true">✦</span><span><b>恒星接收器</b><small>库存</small></span></button>
+          <button class="tool-button advanced-tool" data-tool="solarSailLauncher" data-dock-category="power" data-tech-lock="orbital-construction" title="消耗太阳帆并发射到恒星轨道"><span class="tool-key">L</span><span class="tool-icon" aria-hidden="true">◌</span><span><b>太阳帆发射台</b><small>库存</small></span></button>
+          <button class="tool-button advanced-tool" data-tool="structureLauncher" data-dock-category="power" data-tech-lock="orbital-construction" title="消耗结构火箭并发射到恒星轨道"><span class="tool-key">O</span><span class="tool-icon" aria-hidden="true">△</span><span><b>结构火箭发射台</b><small>库存</small></span></button>
           <button class="tool-button advanced-tool" data-tool="powerTower" data-dock-category="power" title="以电塔为圆心形成圆形供电覆盖"><span class="tool-key">7</span><span class="tool-icon image-tool power-tower-icon" data-fallback="⌁"><img src="godot_game/assets/generated/building_power-tower_v01.svg" alt="" /></span><span><b>电力塔</b><small>库存</small></span></button>
           <button class="tool-button advanced-tool" data-tool="longPowerTower" data-dock-category="power" data-tech-lock="power-transmission" title="需要远距输电"><span class="tool-key">8</span><span class="tool-icon image-tool long-power-tower-icon" data-fallback="⌁"><img src="godot_game/assets/generated/building_long-power-tower_v01.svg" alt="" /></span><span><b>远距离电力塔</b><small>库存</small></span></button>
           <button class="tool-button advanced-tool" data-tool="ultraPowerTower" data-dock-category="power" data-tech-lock="advanced-power-grid" title="需要超远距骨干网"><span class="tool-key">9</span><span class="tool-icon image-tool ultra-power-tower-icon" data-fallback="⌁"><img src="godot_game/assets/generated/building_ultra-power-tower_v01.svg" alt="" /></span><span><b>超远距离电力塔</b><small>库存</small></span></button>
@@ -225,7 +228,7 @@
 
         <section class="planet-dock">
           <div class="planet-dock-info"><span class="planet-dock-kicker" id="planet-dock-kicker">母星基地</span><strong id="planet-dock-name">晨星-03</strong><p id="planet-dock-description">母星工业区。所有货运舱从这里发射，回收物会直接进入物流仓储。</p><div class="planet-reward" id="planet-reward">本地资源：铁、铜、硅</div></div>
-          <div class="planet-dock-action"><span class="eyebrow">星球行动</span><div class="cargo-options" id="cargo-options"></div><button class="launch-button" id="launch-route-button"><span>▲</span><b>派遣货运舱</b><small id="launch-route-cost">完成「星际物流」后可用</small></button><button class="planet-land-button" id="planet-land-button"><span>⌂</span><b id="planet-land-label">进入星球</b><small id="planet-land-note">完成一次航次后开放</small></button></div>
+          <div class="planet-dock-action"><span class="eyebrow">星球行动</span><div class="cargo-direction-label">去程装载</div><div class="cargo-options" id="cargo-options"></div><div class="cargo-direction-label return-label">返程回收</div><div class="cargo-options" id="return-cargo-options"></div><button class="launch-button" id="launch-route-button"><span>▲</span><b>派遣货运舱</b><small id="launch-route-cost">完成「星际物流」后可用</small></button><button class="planet-land-button" id="planet-land-button"><span>⌂</span><b id="planet-land-label">进入星球</b><small id="planet-land-note">完成一次航次后开放</small></button></div>
         </section>
 
         <section class="stellar-project" id="stellar-project">
@@ -235,7 +238,7 @@
           <div class="project-progress"><i id="stellar-project-fill"></i></div>
           <div class="project-meta"><span id="stellar-project-progress">0 / 100</span><span id="stellar-project-supply">结构矩阵 4 · 钛 2 · 芯片 1</span></div>
           <div class="stellar-energy-readout" id="stellar-energy-readout">框架完成后，可部署恒星接收器收集并转化能源。</div>
-          <button class="project-action" id="stellar-project-button" disabled><span>◇</span><b>部署框架组件</b><small id="stellar-project-cost">完成「戴森框架」后可用</small></button>
+          <div class="stellar-project-actions"><button class="project-action" id="stellar-project-button" disabled><span>◇</span><b>部署轨道节点</b><small id="stellar-project-cost">完成「戴森框架」后可用</small></button><button class="project-repair" id="stellar-repair-button" disabled><span>↻</span><b>维修轨道组件</b><small>消耗同类组件</small></button></div>
         </section>
 
         <section class="route-log-section"><div class="tech-section-heading"><div><span class="eyebrow">航线记录</span><h3>航线记录</h3></div><span class="section-count" id="route-log-count">0 条</span></div><div class="route-log" id="route-log"><span class="route-log-empty">暂无航线记录</span></div></section>
@@ -245,11 +248,11 @@
       <div class="game-toast" id="game-toast"><span class="toast-dot"></span><span id="toast-message">准备开始建造</span></div>
       <div class="paused-overlay" id="paused-overlay" hidden><strong>模拟已暂停</strong><span>按 Space 继续</span></div>
     </div>
-    <script src="game.core.js?v=20260922-01"></script>
-    <script src="game.world.js?v=20260922-01"></script>
-    <script src="game.sim.js?v=20260922-01"></script>
-    <script src="game.ui.js?v=20260922-01"></script>
-    <script src="game.tools.js?v=20260922-01"></script>
-    <script src="game.main.js?v=20260922-01"></script>
+    <script src="game.core.js?v=20260923-01"></script>
+    <script src="game.world.js?v=20260923-01"></script>
+    <script src="game.sim.js?v=20260923-01"></script>
+    <script src="game.ui.js?v=20260923-01"></script>
+    <script src="game.tools.js?v=20260923-01"></script>
+    <script src="game.main.js?v=20260923-01"></script>
   </body>
 </html>

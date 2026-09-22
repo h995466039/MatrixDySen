@@ -27,6 +27,7 @@ query('#reset-button').addEventListener('click', () => {
   state.interstellar = makeInterstellarState();
   state.stellarProject = makeStellarProject();
   state.activePlanet = 'home';
+  terrainPlanetId = 'home';
   state.planetSnapshots = {};
   state.career = null;
   state.careerChosen = false;
@@ -58,6 +59,12 @@ query('#close-selection').addEventListener('click', () => cancelToolSelection())
 query('#selection-recipe').addEventListener('click', () => {
   const building = state.buildings.find(entry => entry.id === state.selectedId);
   if (building && building.type === 'smelter') cycleSmelterRecipe(building);
+  else if (building && ['assembler', 'workbench'].includes(building.type)) cycleAssemblyRecipe(building);
+});
+query('#stellar-repair-button')?.addEventListener('click', () => {
+  repairStellarComponents();
+  updateStarMapUI();
+  updateHUD();
 });
 query('#selection-grid-action').addEventListener('click', () => {
   const building = state.buildings.find(entry => entry.id === state.selectedId);
@@ -273,7 +280,7 @@ canvas.addEventListener('wheel', event => {
   if (oldZoom !== state.zoom) showToast(`视野缩放 · ${Math.round(state.zoom * 100)}%`);
 }, { passive: false });
 
-const toolHotkeys = { q: 'sorter', e: 'solidStorage', f: 'researchLab', g: 'wind', h: 'thermal', j: 'gasTurbine', k: 'stellarReceiver', z: 'workbench', x: 'oilExtractor', v: 'gasExtractor', y: 'liquidStorage', u: 'gasStorage', i: 'logisticsStation' };
+const toolHotkeys = { q: 'sorter', e: 'solidStorage', f: 'researchLab', g: 'wind', h: 'thermal', j: 'gasTurbine', k: 'stellarReceiver', l: 'solarSailLauncher', o: 'structureLauncher', z: 'workbench', x: 'oilExtractor', v: 'gasExtractor', y: 'liquidStorage', u: 'gasStorage', i: 'logisticsStation' };
 
 document.addEventListener('keydown', event => {
   if (event.target.tagName === 'INPUT') return;
@@ -341,7 +348,9 @@ function initializeGame() {
   window.addEventListener('resize', resize);
   resize();
   applyQaDemoState();
+  if (qaNormalMode) applyNormalQaState();
   if (qaPlaythroughMode) runQaPlaythrough();
+  if (qaNormalMode) runNormalQaPath();
   renderTechPanel();
   renderCareerPanel();
   wireOptionalAssetImages();

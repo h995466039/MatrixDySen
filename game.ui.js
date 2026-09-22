@@ -5,25 +5,27 @@ function updateStellarProjectUI() {
   const section = query('#stellar-project');
   if (!section) return;
   const unlocked = isTechUnlocked('dyson-frame');
-  const complete = state.stellarProject.progress >= 100;
+  const complete = getFactoryDiagnostic().kind === 'complete';
   const progress = state.stellarProject.progress;
   section.classList.toggle('project-locked', !unlocked);
   section.classList.toggle('project-complete', complete);
-  query('#stellar-project-state').textContent = !unlocked ? '未解锁' : complete ? '已完成' : '施工中';
-  query('#stellar-project-title').textContent = complete ? '第一圈戴森框架已点亮' : '戴森框架施工台';
-  query('#stellar-project-copy').textContent = !unlocked ? '完成主线科技「戴森框架」，才能把异星材料转化为恒星轨道组件。' : complete ? '恒星能量网络已建立，继续扩展将进入下一阶段。' : '从熔火-β回收钛，用结构矩阵和处理器部署轨道组件。';
+  query('#stellar-project-state').textContent = !unlocked ? '未解锁' : complete ? '稳定运行' : progress >= 100 ? '收能中' : '施工中';
+  query('#stellar-project-title').textContent = complete ? '恒星能源网稳定运行' : '轨道施工与收能';
+  query('#stellar-project-copy').textContent = !unlocked ? '完成主线科技「戴森框架」，才能把异星材料转化为恒星轨道组件。' : '节点、太阳帆和结构火箭都来自真实生产线；组件有寿命，需要维护或替换。';
   query('#stellar-project-fill').style.width = `${progress}%`;
-  query('#stellar-project-progress').textContent = `${progress} / 100 · ${state.stellarProject.modules} 个组件`;
-  query('#stellar-project-supply').textContent = formatCost(stellarModuleCost);
+  query('#stellar-project-progress').textContent = `${progress} / 100 · 节点 ${state.stellarProject.nodesDeployed || 0}/20`;
+  query('#stellar-project-supply').textContent = `太阳帆 ${state.stellarProject.sailsDeployed || 0} · 火箭 ${state.stellarProject.rocketsDeployed || 0}`;
   const energyReadout = query('#stellar-energy-readout');
   if (energyReadout) {
     energyReadout.textContent = !complete
-      ? '框架完成后，可部署恒星接收器收集并转化能源。'
-      : `恒星储能 ${formatNumber(Math.floor(state.stellarProject.energyStored || 0))} · 接收速率 ${(state.stellarProject.energyRate || 0).toFixed(1)} / 秒`;
+      ? '先部署 20 个轨道节点，再用发射台送入太阳帆和结构火箭。'
+      : `储能 ${formatNumber(Math.floor(state.stellarProject.energyStored || 0))} · 收集 ${(state.stellarProject.energyRate || 0).toFixed(1)} / 秒 · 稳定 ${Math.floor(state.stellarProject.stabilitySeconds || 0)} 秒`;
   }
   const button = query('#stellar-project-button');
-  button.disabled = !unlocked || complete || !canAffordStorage(stellarModuleCost);
-  query('#stellar-project-cost').textContent = !unlocked ? '完成「戴森框架」后可用' : complete ? '恒星工程阶段完成' : button.disabled ? `材料不足 · ${formatCost(stellarModuleCost)}` : `消耗 ${formatCost(stellarModuleCost)}`;
+  button.disabled = !unlocked || (state.stellarProject.nodesDeployed || 0) >= 20 || !canAffordStorage(stellarModuleCost);
+  query('#stellar-project-cost').textContent = !unlocked ? '完成「戴森框架」后可用' : (state.stellarProject.nodesDeployed || 0) >= 20 ? '节点目标已完成 · 接入发射台' : button.disabled ? `材料不足 · ${formatCost(stellarModuleCost)}` : `消耗 ${formatCost(stellarModuleCost)}`;
+  const repairButton = query('#stellar-repair-button');
+  if (repairButton) repairButton.disabled = !(state.stellarProject.components || []).some(component => component.remaining < component.maxLifetime * .8);
 }
 
 function renderCargoOptions() {
@@ -39,6 +41,20 @@ function renderCargoOptions() {
     renderCargoOptions();
     updateStarMapUI();
   }));
+  const returnHost = query('#return-cargo-options');
+  if (returnHost) {
+    const options = returnCargoOptions(state.interstellar.selectedPlanet);
+    returnHost.innerHTML = options.map(option => {
+      const active = state.interstellar.returnCargo === option.resource;
+      const available = planetStorageAmount(state.interstellar.selectedPlanet, option.resource);
+      return `<button type="button" class="cargo-option return-cargo-option${active ? ' active' : ''}" data-return-cargo="${option.resource}"><span class="cargo-option-icon" style="--cargo-color:${resources[option.resource].color}">${resources[option.resource].label.slice(0, 1)}</span><span><b>${resources[option.resource].label}</b><small>${option.note} · 预计 ${formatNumber(available)}</small></span></button>`;
+    }).join('');
+    all('[data-return-cargo]').forEach(button => button.addEventListener('click', () => {
+      state.interstellar.returnCargo = button.dataset.returnCargo;
+      renderCargoOptions();
+      updateStarMapUI();
+    }));
+  }
 }
 
 function updateRouteVisual() {
@@ -80,6 +96,11 @@ function updateStarMapUI() {
   const route = state.interstellar.route;
   const activeTarget = routeTarget();
   const cargo = cargoOptions().find(option => option.resource === state.interstellar.cargo) || cargoOptions()[0];
+  const targetReturnOptions = returnCargoOptions(target.id);
+  const returnCargo = targetReturnOptions.some(option => option.resource === state.interstellar.returnCargo)
+    ? state.interstellar.returnCargo
+    : target.reward?.resource || targetReturnOptions[0]?.resource;
+  state.interstellar.returnCargo = returnCargo;
   query('#star-map-lock').hidden = unlocked;
   panel.classList.toggle('star-map-locked', !unlocked);
   all('[data-planet]').forEach(button => {
@@ -115,8 +136,8 @@ function updateStarMapUI() {
   const routeFill = query('#route-progress-fill');
   if (route && activeTarget) {
     const percent = clamp(route.progress * 100, 0, 100);
-    routeTitle.textContent = `${activeTarget.name} · ${resources[route.cargo].label} ×${route.amount}`;
-    routeStatus.textContent = route.phase === 'outbound' ? '货运舱正在前往目标星球' : '已抵达目标星球，正在返航';
+    routeTitle.textContent = `${activeTarget.name} · 去程 ${resources[route.cargo].label} ×${route.amount}`;
+    routeStatus.textContent = route.phase === 'outbound' ? '货运舱正在前往目标星球' : `已装载返程 ${resources[route.returnCargo]?.label || route.returnCargo} ×${route.returnAmount || 0}`;
     routePhase.textContent = route.phase === 'outbound' ? '去程' : '返航';
     routeTime.textContent = `${Math.ceil((1 - route.progress) * activeTarget.travelTime)} 秒`;
     routeFill.style.width = `${percent}%`;
@@ -142,7 +163,7 @@ function updateStarMapUI() {
       ? '完成「星际物流」后可用'
       : route
         ? '当前货运舱完成后可再次派遣'
-        : `${resources[cargo.resource].label} ×${cargo.amount} · 往返 ${target.travelTime || 0} 秒`;
+        : `去程 ${resources[cargo.resource].label} ×${cargo.amount} · 返程 ${resources[returnCargo]?.label || returnCargo} · 往返 ${target.travelTime || 0} 秒`;
   const landButton = query('#planet-land-button');
   const landLabel = query('#planet-land-label');
   const landNote = query('#planet-land-note');
@@ -171,6 +192,7 @@ function renderStarMap() {
   all('[data-planet]').forEach(button => button.onclick = () => {
     state.interstellar.selectedPlanet = button.dataset.planet;
     updateStarMapUI();
+    renderCargoOptions();
   });
   query('#planet-land-button').onclick = () => {
     switchActivePlanet(state.interstellar.selectedPlanet);
@@ -665,7 +687,8 @@ function updateObjective() {
     { label: '加工', done: snapshot.hasSmelter && snapshot.hasProcessingLink },
     { label: '科研', done: snapshot.hasResearchLab && snapshot.hasResearchLink && snapshot.hasFirstResearch },
     { label: '星际', done: isInterstellarUnlocked() && snapshot.hasFirstTrip },
-    { label: '恒星工程', done: isTechUnlocked('dyson-frame') && state.stellarProject.progress >= 100 }
+    { label: '前哨', done: activeFactoryPlanetCount() >= 2 },
+    { label: '恒星工程', done: getFactoryDiagnostic().kind === 'complete' }
   ];
   query('#objective-steps').innerHTML = steps.map(step => `<span class="objective-step${step.done ? ' done' : ''}"><i>${step.done ? '✓' : '·'}</i>${step.label}</span>`).join('');
   query('#objective-action').dataset.action = diagnostic.action || '查看设施';
@@ -685,8 +708,10 @@ function buildingRecipeText(building) {
     const recipeLabel = building.recipeResource ? `${resources[building.recipeResource].label}矿` : '自动识别';
     return `${recipeLabel} → 金属锭 / 硅片 · 点击切换`;
   }
-  if (building.type === 'assembler') return `铜锭 + 硅片 → 芯片${(building.input?.water || 0) > 0 ? ' · 水冷却加速中' : ''}`;
-  if (building.type === 'workbench') return `铁锭 + 铜锭 → 芯片${(building.input?.crudeOil || 0) > 0 ? ' · 油润滑加速中' : ''}`;
+  if (building.type === 'assembler' || building.type === 'workbench') {
+    const recipe = assemblyRecipeFor(building);
+    return `${formatRecipeInputs(recipe.inputs)} → ${recipe.label} · 点击切换`;
+  }
   if (building.type === 'researchLab') {
     const cube = labProductionCube(building);
     const recipe = cubeRecipes[cube];
@@ -694,6 +719,9 @@ function buildingRecipeText(building) {
   }
   if (building.type === 'thermal') return '煤 → 电力';
   if (building.type === 'gasTurbine') return '天然气 → 电力';
+  if (building.type === 'solarSailLauncher') return '太阳帆 → 恒星轨道';
+  if (building.type === 'structureLauncher') return '结构火箭 → 恒星轨道';
+  if (building.type === 'stellarReceiver') return stellarComponentsReady() ? '轨道组件 → 恒星能源' : '等待轨道组件';
   if (building.type === 'wind') return '风场 → 电力';
   if (isPowerTowerType(building)) return `${building.gridEnabled === false ? '局部覆盖 · 外部断开' : '圆形覆盖 · 外部接入'} · ${getTransmissionRange(building).toFixed(1)} 格`;
   if (building.type === 'sorter') {
@@ -707,6 +735,8 @@ function buildingStatus(building) {
   if (!isBuildingOperational(building)) return '科技锁定';
   if (building.type === 'thermal' && (building.input.coal || 0) <= 0) return '缺煤';
   if (building.type === 'gasTurbine' && (building.input.naturalGas || 0) <= 0) return '缺气';
+  if (building.type === 'solarSailLauncher' && (building.input.solarSail || 0) <= 0) return '缺太阳帆';
+  if (building.type === 'structureLauncher' && (building.input.structureRocket || 0) <= 0) return '缺结构火箭';
   const powerState = getGridPowerState(building);
   if (isPowerTowerType(building)) {
     if (!powerState.grid) return '未接入电网';
@@ -790,6 +820,39 @@ function missingInputsFor(building) {
   return Object.entries(recipe.inputs)
     .filter(([resource, amount]) => (building.input?.[resource] || 0) < amount)
     .map(([resource, amount]) => `${resources[resource]?.label || resource} ×${amount - (building.input?.[resource] || 0)}`);
+}
+
+function buildingDiagnosticText(building) {
+  if (!building) return '';
+  const status = buildingStatus(building);
+  if (status === '科技锁定') return `等待「${buildingTechName(building.type)}」授权后才能运行。`;
+  if (status === '电网瘫痪') return '所在电网已瘫痪：断开外部电塔或补充发电设备，再重新接入。';
+  if (status === '电网高负载') return '电网负载达到 80%：当前效率减半，建议增加发电或拆分电网。';
+  if (status === '未接入电网') return '没有进入电塔的圆形覆盖：在附近部署电力塔并确认它与发电设备相连。';
+  if (status === '缺煤') return '火力发电机没有煤：用出料分拣器把煤接入发电机，或改用风力发电。';
+  if (status === '缺气') return '燃气轮机没有天然气：先部署压采机与气体仓储，再接入进料分拣器。';
+  if (status === '缺太阳帆' || status === '缺结构火箭') return `${status}：把对应组件送入发射台的进料分拣器。`;
+  if (status === '未接入矿脉') return '没有覆盖有效矿脉：把采矿机放在矿脉旁，避开矿脉核心格。';
+  if (status === '未接入水源') return '没有覆盖水源采集区：水泵必须放在水域边缘，不能压住水源核心格。';
+  if (status === '未接入资源田') return '没有覆盖匹配资源田：提取机只能采集对应的原油或天然气矿脉。';
+  if (status === '输出堵塞' || status === '出料受阻') return '输出端已堵塞：检查出料分拣器、传送带末端和目标仓储容量。';
+  if (status === '仓储已满') return '仓储已满：把出料接到下一段产线，或部署同物态的更高等级仓储。';
+  if (status === '未连接建筑' || status === '未连接传送带') return '物流接口不完整：从建筑接口或传送带端点拖拽安装分拣器。';
+  if (status === '等待来料' || status === '缺少输入' || status === '缺少矩阵组件') {
+    const missing = missingInputsFor(building);
+    if (missing.length) return `缺少 ${missing.join('、')}：检查进料分拣器是否接入匹配物态仓储。`;
+    if (building.type === 'researchLab') return '科研站已接入，先在科技中枢选择研究目标，矩阵会自动推进。';
+    return '等待上游物料：确认仓储出料、传送带方向和目标建筑进料分拣器。';
+  }
+  if (status === '待选择科技') return '打开科技中枢选择一个研究目标，科研站才会开始制备矩阵。';
+  if (status === '等待入库') return '仓储已接入但暂无货物：检查上游出料分拣器和传送带末端。';
+  if (status === '等待产出' || status === '等待脉冲') return '设施在线，等待下一次生产脉冲。';
+  if (status === '取放中' || status === '采掘中' || status === '制备矩阵' || status === '生产中' || status === '供电中' || status === '采水中' || status === '采集流体') return '运行正常，物流会在目标端口有空间时继续推进。';
+  if (building.type === 'sorter') {
+    const beltCount = building.sorterMode === 'output' ? sorterOutputBelts(building).length : sorterInputBelts(building).length;
+    return beltCount ? '接口在线：物料会按分拣规则寻找可用出口。' : '等待传送带端点：从分拣器边缘继续铺设或拖拽连接。';
+  }
+  return '';
 }
 
 function rawResourceForInput(resource) {
@@ -1087,8 +1150,17 @@ function getFactoryDiagnostic() {
   if (!snapshot.hasFirstTrip) return { kind: 'progress', stage: 'interstellar', progress: 90, title: '完成第一次异星航次', text: '打开星图，选择熔火-β，装载处理器并派遣货运舱。', action: '打开星图' };
   if (!isTechUnlocked('stellar-network')) return { kind: 'progress', stage: 'stellar', progress: 95, title: '扩展恒星网络', text: '把钛和科研矩阵带回母星，继续研究恒星网络。', action: '打开科技中枢' };
   if (!isTechUnlocked('dyson-frame')) return { kind: 'progress', stage: 'stellar', progress: 97, title: '研究戴森框架', text: '用信息矩阵和结构矩阵完成主线研究，开启恒星工程施工台。', action: '打开科技中枢' };
-  if (state.stellarProject.progress < 100) return { kind: 'progress', stage: 'stellar', progress: 97 + state.stellarProject.progress * .03, title: `部署恒星框架 · ${state.stellarProject.progress}%`, text: '从熔火-β回收钛，用结构矩阵和处理器逐个部署轨道组件。', action: '打开星图' };
-  return { kind: 'complete', stage: 'complete', progress: 100, title: '第一圈戴森框架已点亮', text: '恒星能量网络已经建立，继续扩展将进入下一阶段。', action: '打开星图' };
+  if (!isTechUnlocked('advanced-materials')) return { kind: 'progress', stage: 'stellar', progress: 96, title: '研究复合材料', text: '先开放线圈、电路板、电动机和玻璃，终局组件必须从真实中间品生产。', action: '打开科技中枢' };
+  if (!isTechUnlocked('stellar-fabrication')) return { kind: 'progress', stage: 'stellar', progress: 96.5, title: '研究恒星制造', text: '让组装机能够生产粒子容器、太阳帆和结构火箭。', action: '打开科技中枢' };
+  if (!isTechUnlocked('orbital-construction')) return { kind: 'progress', stage: 'stellar', progress: 97, title: '研究轨道施工', text: '授权两座发射台，把地面产线连接到恒星轨道。', action: '打开科技中枢' };
+  if ((state.stellarProject.nodesDeployed || 0) < 20) return { kind: 'progress', stage: 'stellar', progress: 97 + (state.stellarProject.nodesDeployed || 0) * .1, title: `部署轨道节点 · ${state.stellarProject.nodesDeployed || 0}/20`, text: '使用轨道节点逐格搭起第一圈框架；节点必须由组装机生产，不会凭空出现。', action: '打开星图' };
+  if (!state.stellarProject.components?.some(component => component.type === 'sail')) return { kind: 'progress', stage: 'stellar', progress: 99, title: '发射太阳帆', text: '把太阳帆送入轨道，建立接收恒星光压的工作面。', action: '选择太阳帆发射台', tool: 'solarSailLauncher' };
+  if (!state.stellarProject.components?.some(component => component.type === 'rocket')) return { kind: 'progress', stage: 'stellar', progress: 99, title: '发射结构火箭', text: '结构火箭负责承力节点；发射台需要接入电网和结构火箭库存。', action: '选择结构火箭发射台', tool: 'structureLauncher' };
+  if (activeFactoryPlanetCount() < 2) return { kind: 'progress', stage: 'interstellar', progress: 99, title: '让第二颗星球运行起来', text: '至少一颗远端星球需要同时拥有采集设备和发电设备，恒星工程不能只依赖母星。', action: '打开星图' };
+  if (!state.buildings.some(building => building.type === 'stellarReceiver' && isBuildingOperational(building))) return { kind: 'progress', stage: 'stellar', progress: 99, title: '部署恒星接收器', text: '把接收器放在母星平原上并接入电网，轨道组件齐备后才会产生电力。', action: '选择恒星接收器', tool: 'stellarReceiver' };
+  if ((state.stellarProject.stabilitySeconds || 0) < 30) return { kind: 'progress', stage: 'stellar', progress: 99.5, title: '维持轨道稳定', text: `组件正在工作 ${Math.floor(state.stellarProject.stabilitySeconds || 0)}/30 秒；组件寿命耗尽前要及时维修或补发。`, action: '打开星图' };
+  if ((state.stellarProject.energyCollected || 0) < (state.stellarProject.targetEnergy || 600)) return { kind: 'progress', stage: 'stellar', progress: 99.7, title: '储存恒星能源', text: `已收集 ${Math.floor(state.stellarProject.energyCollected || 0)} / ${state.stellarProject.targetEnergy || 600}，让接收器持续在线。`, action: '打开星图' };
+  return { kind: 'complete', stage: 'complete', progress: 100, title: '恒星能源网稳定运行', text: '两颗星球正在生产，轨道组件持续工作，恒星能源已达到储能目标。', action: '打开星图' };
 }
 
 function updateFactoryMonitor() {
@@ -1321,8 +1393,10 @@ function updateHUD() {
   const interfaceLine = query('#selection-interface-line');
   const gridLine = query('#selection-grid-line');
   const gridAction = query('#selection-grid-action');
+  const selectionDiagnostic = query('#selection-diagnostic');
+  const selectionDiagnosticText = query('#selection-diagnostic-text');
   renderSorterRouting(selected?.type === 'sorter' ? selected : null);
-  if (!selected && !selectedBelt) { selection.hidden = true; labModePicker.hidden = true; sorterInterface.hidden = true; stockLine.hidden = true; interfaceLine.hidden = true; gridLine.hidden = true; gridAction.hidden = true; }
+  if (!selected && !selectedBelt) { selection.hidden = true; labModePicker.hidden = true; sorterInterface.hidden = true; stockLine.hidden = true; interfaceLine.hidden = true; gridLine.hidden = true; gridAction.hidden = true; selectionDiagnostic.hidden = true; }
   else if (selectedBelt) {
     const beltItems = state.items.filter(item => item.beltId === selectedBelt.id);
     const resourcesOnBelt = [...new Set(beltItems.map(item => resources[item.resource]?.label || item.resource))];
@@ -1334,6 +1408,10 @@ function updateHUD() {
     interfaceLine.hidden = true;
     gridLine.hidden = true;
     gridAction.hidden = true;
+    selectionDiagnostic.hidden = false;
+    selectionDiagnosticText.textContent = beltItems.length
+      ? `当前有 ${beltItems.length} 件货物在途，传送带速度为 ${getBeltTravelFactor().toFixed(2)} 格/秒。`
+      : '暂无在途货物：检查两端分拣器方向和上游建筑是否有产出。';
     query('#selection-name').textContent = `传送带 · ${selectedBelt.length} 格`;
     query('#selection-state').textContent = beltItems.length ? '运输中' : '待命';
     query('#selection-state').style.color = '#62d69a';
@@ -1363,11 +1441,14 @@ function updateHUD() {
     query('#selection-input').textContent = input || '无';
     const output = Object.entries(selected.output).find(([, amount]) => amount > 0);
     const status = buildingStatus(selected);
+    const diagnosticText = buildingDiagnosticText(selected);
+    selectionDiagnostic.hidden = !diagnosticText;
+    selectionDiagnosticText.textContent = diagnosticText;
     query('#selection-state').textContent = status;
-    query('#selection-state').style.color = ['科技锁定', '电力不足', '电网瘫痪', '电网高负载', '输出堵塞', '缺少输入', '缺少矩阵组件', '缺煤', '缺气', '未接入矿脉', '未接入水源', '未接入电网'].includes(status) ? '#ff9b3d' : '#62d69a';
+    query('#selection-state').style.color = ['科技锁定', '电力不足', '电网瘫痪', '电网高负载', '输出堵塞', '出料受阻', '缺少输入', '缺少矩阵组件', '缺煤', '缺气', '缺太阳帆', '缺结构火箭', '未接入矿脉', '未接入水源', '未接入资源田', '未接入电网', '未连接建筑', '未连接传送带', '仓储已满'].includes(status) ? '#ff9b3d' : '#62d69a';
     query('#selection-output').textContent = output ? `${formatNumber(output[1])} 单位缓存` : ['miner', 'oilExtractor', 'waterPump', 'gasExtractor'].includes(selected.type) ? '采掘中 · 等待输出' : '等待产出';
     query('#selection-recipe').textContent = buildingRecipeText(selected);
-    query('#selection-recipe').style.cursor = selected.type === 'smelter' ? 'pointer' : 'default';
+    query('#selection-recipe').style.cursor = ['smelter', 'assembler', 'workbench'].includes(selected.type) ? 'pointer' : 'default';
     const selectionProduction = buildingProductionRate(selected.id);
     query('#selection-production').textContent = selectionProduction > 0 ? `≈ ${Math.round(selectionProduction)} 件 / 分` : '近一分钟无产出';
     query('#selection-tech').textContent = isBuildingUnlocked(selected.type) ? `${buildingTechName(selected.type)} · 已授权` : `需完成「${buildingTechName(selected.type)}」`;

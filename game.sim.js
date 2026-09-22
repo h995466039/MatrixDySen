@@ -103,6 +103,20 @@ function cycleSmelterRecipe(building) {
   render();
 }
 
+function cycleAssemblyRecipe(building) {
+  if (!building || !['assembler', 'workbench'].includes(building.type)) return;
+  const available = assemblyRecipeOrder.filter(id => !assemblyRecipes[id].tech || isTechUnlocked(assemblyRecipes[id].tech));
+  if (!available.length) return;
+  const current = assemblyRecipes[building.recipeId] ? building.recipeId : 'processor';
+  const next = available[(Math.max(0, available.indexOf(current)) + 1) % available.length];
+  building.recipeId = next;
+  building.process = 0;
+  saveGame();
+  showToast(`组装配方已切换 · ${assemblyRecipes[next].label}`);
+  updateHUD();
+  render();
+}
+
 function isTechUnlocked(id) {
   return state.tech.includes(id);
 }
@@ -149,6 +163,23 @@ function labProductionCube(building) {
     if (storageAmount('structureCube') < 1) return 'structureCube';
   }
   return targetCube;
+}
+
+function assemblyRecipeFor(building) {
+  const recipeId = assemblyRecipes[building?.recipeId] ? building.recipeId : 'processor';
+  const recipe = assemblyRecipes[recipeId] || assemblyRecipes.processor;
+  return {
+    ...recipe,
+    time: getAssemblyTime(building) * (recipe.time / assemblyRecipes.processor.time)
+  };
+}
+
+function stellarComponentsReady() {
+  const components = state.stellarProject?.components || [];
+  return components.length > 0
+    && components.some(component => component.type === 'node')
+    && components.some(component => component.type === 'sail')
+    && components.some(component => component.type === 'rocket');
 }
 
 function placementCheck(type, cell) {
@@ -398,11 +429,17 @@ function acceptsBuildingResource(building, resource) {
     // silently filling with three ores while producing none of them reliably.
     return ['copper', 'iron', 'silicon'].includes(resource) && (!building.recipeResource || building.recipeResource === resource);
   }
-  if (building.type === 'assembler') return ['copperIngot', 'siliconWafer'].includes(resource) || resource === 'water';
-  if (building.type === 'workbench') return ['ironIngot', 'copperIngot', 'siliconWafer'].includes(resource) || resource === 'crudeOil';
+  if (building.type === 'assembler' || building.type === 'workbench') {
+    const recipe = assemblyRecipeFor(building);
+    return Object.prototype.hasOwnProperty.call(recipe.inputs, resource)
+      || (building.type === 'assembler' && resource === 'water')
+      || (building.type === 'workbench' && resource === 'crudeOil');
+  }
   if (building.type === 'thermal') return resource === 'coal';
   if (['waterPump', 'oilExtractor', 'gasExtractor'].includes(building.type)) return false;
   if (building.type === 'gasTurbine') return resource === 'naturalGas';
+  if (building.type === 'solarSailLauncher') return resource === 'solarSail';
+  if (building.type === 'structureLauncher') return resource === 'structureRocket';
   if (building.type === 'researchLab') {
     const cube = labProductionCube(building);
     return Object.prototype.hasOwnProperty.call(cubeRecipes[cube]?.inputs || {}, resource) || resource === 'water';
@@ -501,8 +538,7 @@ function warehouseResourceNeedScore(destination, resource) {
   let required = 0;
   if (destination.type === 'researchLab') required = cubeRecipes[labProductionCube(destination)]?.inputs?.[resource] || 0;
   else if (destination.type === 'smelter') required = destination.recipeResource === resource ? 1 : 0;
-  else if (destination.type === 'assembler') required = ({ copperIngot: 1, siliconWafer: 1 })[resource] || 0;
-  else if (destination.type === 'workbench') required = ({ ironIngot: 1, copperIngot: 1 })[resource] || 0;
+  else if (destination.type === 'assembler' || destination.type === 'workbench') required = assemblyRecipeFor(destination).inputs[resource] || 0;
   else if (destination.type === 'thermal') required = resource === 'coal' ? 1 : 0;
   if (required > current) return 0;
   return 1 + current / Math.max(1, inputCapacity(destination));
@@ -745,7 +781,7 @@ function rebuildPowerGrids() {
 
 function getPowerGeneration(building) {
   if (!isBuildingOperational(building)) return 0;
-  if (building.type === 'stellarReceiver' && (state.stellarProject?.progress || 0) < 100) return 0;
+  if (building.type === 'stellarReceiver' && ((state.stellarProject?.progress || 0) < 100 || !stellarComponentsReady())) return 0;
   const base = buildings[building.type]?.generation || 0;
   const careerMultiplier = activeCareerEffect('power') ? 1.2 : 1;
   const gridMultiplier = isTechUnlocked('power-grid-mk2') ? 1.25 : 1;
@@ -875,9 +911,7 @@ function simulateBuildings(dt) {
 
     if ((building.type === 'assembler' || building.type === 'workbench') && powerState.powered) {
       if (Object.values(building.output).reduce((sum, amount) => sum + amount, 0) >= outputCapacity(building)) return;
-      const recipe = building.type === 'workbench'
-        ? { inputs: { ironIngot: 1, copperIngot: 1 }, output: 'processor', time: getAssemblyTime(building) }
-        : { inputs: { copperIngot: 1, siliconWafer: 1 }, output: 'processor', time: getAssemblyTime(building) };
+      const recipe = assemblyRecipeFor(building);
       if (!hasRecipeInputs(building.input, recipe)) return;
       const assemblyCatalyst = catalystBoostFor(building);
       building.process += dt * efficiency;
@@ -889,6 +923,18 @@ function simulateBuildings(dt) {
         }
         building.output[recipe.output] = (building.output[recipe.output] || 0) + 1;
         noteProduced(recipe.output, 1, building.id);
+      }
+    }
+
+    if (['solarSailLauncher', 'structureLauncher'].includes(building.type) && powerState.powered) {
+      const inputResource = building.type === 'solarSailLauncher' ? 'solarSail' : 'structureRocket';
+      if ((building.input[inputResource] || 0) > 0) {
+        building.process = (building.process || 0) + dt * efficiency;
+        if (building.process >= (building.type === 'solarSailLauncher' ? 4.5 : 7.5)) {
+          building.process = 0;
+          building.input[inputResource] -= 1;
+          deployStellarComponent(building.type === 'solarSailLauncher' ? 'sail' : 'rocket');
+        }
       }
     }
 
@@ -985,6 +1031,7 @@ function simulateBuildings(dt) {
     item.progress = 1;
     return true;
   });
+  simulateRemoteFactories(dt);
   simulateStellarEnergy(dt);
 }
 
@@ -992,16 +1039,33 @@ function simulateStellarEnergy(dt) {
   const project = state.stellarProject;
   if (!project) return;
   project.energyRate = 0;
-  if (project.progress < 100) return;
+  const components = Array.isArray(project.components) ? project.components : [];
+  components.forEach(component => { component.remaining = Math.max(0, component.remaining - dt); });
+  const expired = components.filter(component => component.remaining <= 0);
+  if (expired.length) {
+    project.components = components.filter(component => component.remaining > 0);
+    project.stabilitySeconds = 0;
+    showToast(`轨道组件脱落 · ${expired.length} 件需要补发或维修`, 'warning');
+  }
+  const activeComponents = project.components || [];
+  project.sailsDeployed = activeComponents.filter(component => component.type === 'sail').length;
+  project.rocketsDeployed = activeComponents.filter(component => component.type === 'rocket').length;
+  project.nodesDeployed = activeComponents.filter(component => component.type === 'node').length;
+  project.progress = clamp(project.nodesDeployed / 20 * 100, 0, 100);
+  if (project.progress < 100 || !stellarComponentsReady()) {
+    project.stabilitySeconds = 0;
+    return;
+  }
   const rate = state.buildings.reduce((total, building) => {
     if (building.type !== 'stellarReceiver' || !isBuildingOperational(building)) return total;
     const grid = getGridPowerState(building);
     if (!grid.grid || grid.grid.blackout) return total;
     return total + getPowerGeneration(building) * grid.efficiency;
   }, 0);
-  project.energyRate = rate;
-  project.energyStored = Math.max(0, (project.energyStored || 0) + rate * dt);
-  project.energyCollected = Math.max(0, (project.energyCollected || 0) + rate * dt);
+  project.energyRate = rate * Math.min(1, activeComponents.length / 24);
+  if (project.energyRate > 0) project.stabilitySeconds = (project.stabilitySeconds || 0) + dt;
+  project.energyStored = Math.max(0, (project.energyStored || 0) + project.energyRate * dt);
+  project.energyCollected = Math.max(0, (project.energyCollected || 0) + project.energyRate * dt);
 }
 
 function simulateResearch(dt) {
@@ -1027,6 +1091,115 @@ function simulateResearch(dt) {
     saveGame();
     showToast(`${tech.label} 研究完成`);
   }
+}
+
+function planetSnapshotStorage(planetId) {
+  state.planetSnapshots = state.planetSnapshots || {};
+  const snapshot = makePlanetSnapshot(planetId, state.planetSnapshots[planetId]);
+  snapshot.buildings = Array.isArray(snapshot.buildings) ? snapshot.buildings : [];
+  state.planetSnapshots[planetId] = snapshot;
+  return snapshot.buildings.filter(building => isStorageType(building));
+}
+
+function planetStorageAmount(planetId, resource) {
+  return planetSnapshotStorage(planetId)
+    .filter(building => storageFormOf(building) === resourceForm(resource))
+    .reduce((sum, building) => sum + (building.stock?.[resource] || 0), 0);
+}
+
+function putInPlanetStorage(planetId, resource, amount) {
+  let remaining = Math.max(0, amount);
+  planetSnapshotStorage(planetId).forEach(storage => {
+    if (remaining <= 0 || storageFormOf(storage) !== resourceForm(resource)) return;
+    storage.stock = storage.stock || {};
+    const available = Math.min(remaining, Math.max(0, storageCapacity(storage) - storageUsed(storage)));
+    if (available <= 0) return;
+    storage.stock[resource] = (storage.stock[resource] || 0) + available;
+    remaining -= available;
+  });
+  return amount - remaining;
+}
+
+function takeFromPlanetStorage(planetId, resource, amount) {
+  let remaining = Math.max(0, amount);
+  planetSnapshotStorage(planetId).forEach(storage => {
+    if (remaining <= 0 || storageFormOf(storage) !== resourceForm(resource)) return;
+    const available = Math.min(remaining, storage.stock?.[resource] || 0);
+    if (available <= 0) return;
+    storage.stock[resource] -= available;
+    remaining -= available;
+  });
+  return amount - remaining;
+}
+
+function remoteFactoryStorage(snapshot, resource) {
+  return (snapshot?.buildings || []).find(building => isStorageType(building)
+    && storageFormOf(building) === resourceForm(resource)
+    && storageUsed(building) < storageCapacity(building)) || null;
+}
+
+function remoteFactoryPower(snapshot) {
+  const machines = (snapshot?.buildings || []).filter(building => isBuildingOperational(building));
+  const generation = machines.reduce((total, building) => {
+    if (!['wind', 'thermal', 'gasTurbine'].includes(building.type)) return total;
+    if (building.type === 'thermal' && (building.input?.coal || 0) <= 0) return total;
+    if (building.type === 'gasTurbine' && (building.input?.naturalGas || 0) <= 0) return total;
+    return total + getPowerGeneration(building);
+  }, 0);
+  const load = machines.reduce((total, building) => total + (buildings[building.type]?.power || 0), 0);
+  if (generation <= POWER_EPSILON || load > generation + POWER_EPSILON) return 0;
+  return load / generation >= .8 ? .5 : 1;
+}
+
+function simulateRemoteFactory(planetId, snapshot, dt) {
+  const efficiency = remoteFactoryPower(snapshot);
+  if (!efficiency) return;
+  const nodes = snapshot.nodes || [];
+  (snapshot.buildings || []).filter(building => isBuildingOperational(building)
+    && ['miner', 'oilExtractor', 'waterPump', 'gasExtractor'].includes(building.type)
+    && building.nodeId).forEach(building => {
+      const node = nodes.find(entry => entry.id === building.nodeId);
+      if (!node || node.amount <= 0 || !remoteFactoryStorage(snapshot, node.resource)) return;
+      building.offlineTimer = (building.offlineTimer || 0) + dt * efficiency;
+      const cycle = getMiningTime(building) * 1.15;
+      const batches = Math.min(Math.floor(building.offlineTimer / cycle), node.amount);
+      if (!batches) return;
+      const storage = remoteFactoryStorage(snapshot, node.resource);
+      const free = Math.max(0, storageCapacity(storage) - storageUsed(storage));
+      const amount = Math.min(batches, free);
+      if (!amount) return;
+      building.offlineTimer -= amount * cycle;
+      storage.stock = storage.stock || {};
+      storage.stock[node.resource] = (storage.stock[node.resource] || 0) + amount;
+      node.amount -= amount;
+    });
+  snapshot.lastSimulatedAt = state.time;
+  if (planetId) snapshot.productionPulse = (snapshot.productionPulse || 0) + dt * efficiency;
+}
+
+function simulateRemoteFactories(dt) {
+  Object.entries(state.planetSnapshots || {}).forEach(([planetId, snapshot]) => {
+    if (planetId === state.activePlanet || !snapshot) return;
+    simulateRemoteFactory(planetId, snapshot, dt);
+  });
+}
+
+function planetHasActiveProduction(planetId) {
+  const snapshot = state.planetSnapshots?.[planetId];
+  if (!snapshot) return false;
+  const extraction = snapshot.buildings?.some(building => {
+    if (!['miner', 'oilExtractor', 'waterPump', 'gasExtractor'].includes(building.type) || !building.nodeId) return false;
+    const node = snapshot.nodes?.find(entry => entry.id === building.nodeId);
+    return Boolean(node && remoteFactoryStorage(snapshot, node.resource));
+  });
+  const generation = snapshot.buildings?.some(building => ['wind', 'thermal', 'gasTurbine'].includes(building.type));
+  return Boolean(extraction && generation && remoteFactoryPower(snapshot) > 0);
+}
+
+function activeFactoryPlanetCount() {
+  const ids = new Set(['home']);
+  planetCatalog.forEach(planet => { if (planet.id !== 'home' && planetHasActiveProduction(planet.id)) ids.add(planet.id); });
+  return ids.size;
 }
 
 function isInterstellarUnlocked() {
@@ -1055,6 +1228,7 @@ function switchActivePlanet(planetId) {
 
   snapshotCurrentPlanet();
   state.activePlanet = planetId;
+  terrainPlanetId = planetId;
   const snapshot = makePlanetSnapshot(planetId, state.planetSnapshots?.[planetId]);
   state.planetSnapshots[planetId] = snapshot;
   state.buildings = snapshot.buildings;
@@ -1097,8 +1271,18 @@ function cargoOptions() {
   return [
     { resource: 'processor', amount: 2, note: '稳定货物' },
     { resource: 'electromagneticCube', amount: 4, note: '科研样本' },
-    { resource: 'energyCube', amount: 3, note: '高能样本' }
+    { resource: 'energyCube', amount: 3, note: '高能样本' },
+    { resource: 'structureCube', amount: 3, note: '施工样本' }
   ];
+}
+
+function returnCargoOptions(planetId = state.interstellar.selectedPlanet) {
+  const planet = planetById[planetId];
+  const resourcesForPlanet = planet?.localResources || [];
+  const stored = resourcesForPlanet
+    .map(resource => ({ resource, amount: Math.max(1, Math.min(8, Math.floor(planetStorageAmount(planetId, resource)))), note: '目标星球仓储' }))
+    .filter(option => planetStorageAmount(planetId, option.resource) > 0);
+  return stored.length ? stored : resourcesForPlanet.slice(0, 4).map(resource => ({ resource, amount: 1, note: '等待前哨采集' }));
 }
 
 function launchRoute() {
@@ -1114,7 +1298,8 @@ function launchRoute() {
     return;
   }
   takeFromStorage(cargo.resource, cargo.amount);
-  state.interstellar.route = { id: `route-${Date.now()}`, targetId: target.id, cargo: cargo.resource, amount: cargo.amount, progress: 0, phase: 'outbound' };
+  const returnCargo = state.interstellar.returnCargo || target.reward?.resource || returnCargoOptions(target.id)[0]?.resource || target.localResources[0];
+  state.interstellar.route = { id: `route-${Date.now()}`, targetId: target.id, cargo: cargo.resource, amount: cargo.amount, returnCargo, returnAmount: 0, progress: 0, phase: 'outbound' };
   addFlightLog(`货运舱发射 → ${target.name} · ${resources[cargo.resource].label} ×${cargo.amount}`);
   saveGame();
   showToast(`货运舱已发射 · ${target.name}`);
@@ -1128,35 +1313,71 @@ function simulateInterstellar(dt) {
   route.progress += dt / Math.max(target.travelTime || 12, 8);
   if (route.progress < 1) return;
   if (route.phase === 'outbound') {
+    const delivered = putInPlanetStorage(target.id, route.cargo, route.amount);
+    if (delivered < route.amount) {
+      addFlightLog(`${target.name} 仓储容量不足 · 去程货物仅卸载 ${delivered}/${route.amount}`);
+    }
+    route.outboundDelivered = delivered;
     route.phase = 'returning';
     route.progress = 0;
-    addFlightLog(`货运舱抵达 ${target.name} · 开始返航`);
-    showToast(`${target.name} 已接入 · 货舱返航中`);
+    route.returnAmount = Math.min(planetStorageAmount(target.id, route.returnCargo), Math.max(1, route.amount * 4));
+    addFlightLog(`货运舱抵达 ${target.name} · 卸载 ${resources[route.cargo].label} · 开始装载返程货物`);
+    showToast(`${target.name} 已接入 · 返程装载 ${resources[route.returnCargo]?.label || route.returnCargo}`);
     return;
   }
-  const reward = target.reward;
-  const stored = putInStorage(reward.resource, reward.amount);
-  if (stored < reward.amount) state.inventory[reward.resource] = (state.inventory[reward.resource] || 0) + reward.amount - stored;
+  const returnResource = route.returnCargo || target.reward?.resource || target.localResources[0];
+  const requested = Math.max(0, route.returnAmount || planetStorageAmount(target.id, returnResource));
+  const returned = takeFromPlanetStorage(target.id, returnResource, requested);
+  const stored = putInStorage(returnResource, returned);
+  if (stored < returned) state.inventory[returnResource] = (state.inventory[returnResource] || 0) + returned - stored;
   state.interstellar.completedTrips += 1;
   state.interstellar.visits[target.id] = (state.interstellar.visits[target.id] || 0) + 1;
-  addFlightLog(`航次完成 ← ${target.name} · ${resources[reward.resource].label} ×${reward.amount}`);
+  addFlightLog(`航次完成 ← ${target.name} · ${resources[returnResource]?.label || returnResource} ×${returned}`);
   state.interstellar.route = null;
   saveGame();
-  showToast(`异星资源已回收 · ${resources[reward.resource].label} ×${reward.amount} · 已开放降落`);
+  showToast(returned > 0 ? `异星资源已回收 · ${resources[returnResource]?.label || returnResource} ×${returned} · 已开放降落` : '航次完成 · 目标星球还没有可回收库存 · 已开放降落', returned > 0 ? 'ok' : 'warning');
 }
 
-const stellarModuleCost = { structureCube: 4, titanium: 2, processor: 1 };
+const stellarModuleCost = { orbitNode: 1 };
+
+function deployStellarComponent(type) {
+  const project = state.stellarProject;
+  if (!project) return false;
+  project.components = Array.isArray(project.components) ? project.components : [];
+  project.components.push({ id: `orbit-${type}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, type, remaining: 900, maxLifetime: 900 });
+  if (type === 'node') project.nodesDeployed = (project.nodesDeployed || 0) + 1;
+  if (type === 'sail') project.sailsDeployed = (project.sailsDeployed || 0) + 1;
+  if (type === 'rocket') project.rocketsDeployed = (project.rocketsDeployed || 0) + 1;
+  project.progress = clamp((project.nodesDeployed || 0) / 20 * 100, 0, 100);
+  project.stabilitySeconds = 0;
+  return true;
+}
+
+function repairStellarComponents() {
+  const project = state.stellarProject;
+  const damaged = (project?.components || []).filter(component => component.remaining < component.maxLifetime * .8);
+  if (!damaged.length) { showToast('轨道组件状态良好'); return; }
+  const repairCost = damaged.reduce((cost, component) => {
+    const material = component.type === 'node' ? 'orbitNode' : component.type === 'sail' ? 'solarSail' : 'structureRocket';
+    cost[material] = (cost[material] || 0) + 1;
+    return cost;
+  }, {});
+  if (!canAffordStorage(repairCost)) { showToast(`维修材料不足 · ${formatCost(repairCost)}`, 'warning'); return; }
+  takeStorageCost(repairCost);
+  damaged.forEach(component => { component.remaining = component.maxLifetime; });
+  project.stabilitySeconds = 0;
+  saveGame();
+  showToast(`已维修 ${damaged.length} 个轨道组件`);
+}
 
 function contributeStellarProject() {
   if (!isTechUnlocked('dyson-frame')) { showToast('需要完成「戴森框架」科技', 'warning'); return; }
-  if (state.stellarProject.progress >= 100) { showToast('恒星工程已完成'); return; }
+  if ((state.stellarProject.nodesDeployed || 0) >= 20) { showToast('轨道节点已达到第一圈目标'); return; }
   if (!canAffordStorage(stellarModuleCost)) { showToast(`仓储材料不足 · ${formatCost(stellarModuleCost)}`, 'warning'); return; }
   takeStorageCost(stellarModuleCost);
-  state.stellarProject.progress = clamp(state.stellarProject.progress + 5, 0, 100);
-  state.stellarProject.modules += 1;
-  // 框架施工把原材料组装成恒星框架组件，作为后续部署「恒星能量接收器」的建材来源。
-  putInStorage('stellarFrame', 4);
+  deployStellarComponent('node');
+  state.stellarProject.modules = state.stellarProject.nodesDeployed;
   saveGame();
-  showToast(`框架组件已部署 · ${state.stellarProject.progress}% · 恒星框架组件 +4`);
+  showToast(`轨道节点已部署 · ${state.stellarProject.progress}% · 节点 ${state.stellarProject.nodesDeployed}/20`);
   updateStellarProjectUI();
 }

@@ -7,7 +7,7 @@ const { JSDOM } = require('jsdom');
 const root = __dirname;
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const mode = process.argv[2] || 'playthrough';
-const url = `http://localhost/${mode === 'playthrough' ? '?qa=playthrough' : '?demo=' + mode}`;
+const url = `http://localhost/${mode === 'playthrough' || mode === 'normal' ? '?qa=' + mode : '?demo=' + mode}`;
 
 const dom = new JSDOM(html, {
   url,

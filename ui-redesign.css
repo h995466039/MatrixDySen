@@ -219,6 +219,8 @@ button:focus-visible { outline-color: var(--orange); }
 .selection-head button:hover { border-color: var(--line); background: #182223; }
 .selection-card > strong { font-size: 16px; letter-spacing: .03em; }
 .selection-card > span:not(.eyebrow) { color: var(--green); }
+.selection-diagnostic { display: flex; gap: 7px; align-items: flex-start; margin: 10px 0 2px; padding: 9px 10px; border: 1px solid rgba(235, 154, 77, .25); border-radius: 8px; background: rgba(235, 154, 77, .08); color: var(--muted); font-size: 11px; line-height: 1.45; }
+.selection-diagnostic-mark { flex: 0 0 auto; display: grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; color: #172326; background: var(--orange); font-weight: 800; line-height: 1; }
 .selection-line { margin-top: 10px; padding-top: 7px; border-top-color: var(--line); }
 .selection-line b { color: var(--ink); }
 .selection-progress { height: 4px; margin-top: 13px; background: rgba(119, 200, 195, .12); }
@@ -399,6 +401,20 @@ button:focus-visible { outline-color: var(--orange); }
 @media (prefers-reduced-motion: reduce) {
   .brand-orbit, .career-chip img, .monitor-heading .signal-pulse, .brief-heading .signal-pulse { animation: none; }
 }
+
+.cargo-direction-label { margin-top: 6px; color: var(--faint); font-size: 9px; letter-spacing: .08em; }
+.cargo-direction-label.return-label { margin-top: 10px; color: var(--cyan); }
+.return-cargo-option { border-color: rgba(105, 216, 218, .18); }
+.return-cargo-option.active { border-color: var(--cyan); background: rgba(105, 216, 218, .11); }
+.stellar-project-actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(150px, .58fr); gap: 8px; margin-top: 9px; }
+.stellar-project-actions button { min-width: 0; }
+.project-repair { display: grid; grid-template-columns: 22px minmax(0, 1fr); grid-template-rows: 1fr 1fr; align-items: center; column-gap: 7px; min-height: 38px; padding: 6px 9px; border: 1px solid rgba(199, 217, 76, .28); color: var(--ink); background: rgba(199, 217, 76, .06); text-align: left; }
+.project-repair span { grid-row: span 2; color: var(--lime); font-size: 16px; }
+.project-repair b { font-size: 9px; }
+.project-repair small { color: var(--muted); font-size: 8px; }
+.project-repair:hover:not(:disabled) { border-color: var(--lime); background: rgba(199, 217, 76, .12); }
+.project-repair:disabled { cursor: default; border-color: var(--line); color: var(--faint); background: rgba(14, 31, 45, .4); }
+@media (max-width: 720px) { .stellar-project-actions { grid-template-columns: 1fr; } }
 
 /* Expedition pass: a warmer, calmer play surface with progressive disclosure. */
 :root {

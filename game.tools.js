@@ -212,6 +212,141 @@ function applyQaDemoState() {
   state.paused = false;
 }
 
+function applyNormalQaState() {
+  const storage = makeBuilding('storage', 3, -1);
+  storage.baseHub = true;
+  storage.stock = { ...startingStorageStock };
+  state.career = 'power';
+  state.careerChosen = true;
+  state.pendingCareer = 'power';
+  state.buildings = [storage];
+  state.belts = [];
+  state.nodes = initialNodeState.map(node => ({ ...node }));
+  state.items = [];
+  state.inventory = { ...startingInventory };
+  state.kits = { ...startingKits };
+  state.tech = [...startingTech];
+  state.research = { current: null, progress: 0 };
+  state.interstellar = makeInterstellarState();
+  state.stellarProject = makeStellarProject();
+  state.activePlanet = 'home';
+  state.planetSnapshots = {};
+  state.basePowerGeneration = 0;
+  state.powerGeneration = 0;
+  state.powerLoad = 0;
+  state.powerGrids = [];
+  state.powerSummary = { gridCount: 0, highLoadCount: 0, blackoutCount: 0, generation: 0, load: 0 };
+  state.selectedId = null;
+  state.selectedBeltId = null;
+  state.tool = 'inspect';
+  state.dockCategory = 'extract';
+  state.rotation = 0;
+  state.camera = { x: 0, y: 1 };
+  state.zoom = .78;
+  state.pointer = { cell: { x: 0, y: 0 }, down: false, startCell: null, startBuildingId: null, sorterAnchor: null, panning: false, lastX: 0, lastY: 0 };
+  state.sorterRoutingSignature = '';
+  state.production = { second: -1, current: {}, history: [] };
+  state.paused = false;
+}
+
+function runNormalQaPath() {
+  const failures = [];
+  const check = (condition, message) => { if (!condition) failures.push(message); };
+  const deploy = (tool, cell) => {
+    state.tool = tool;
+    const before = state.buildings.length;
+    placeBuilding(cell);
+    return state.buildings.length > before ? state.buildings[state.buildings.length - 1] : null;
+  };
+  const addRoute = (source, target, prefix) => {
+    const route = beltPortsBetweenBuildings(source, target);
+    if (!route?.segments?.length) return null;
+    const before = state.belts.length;
+    placeBelt(route.start, route.end, route.segments);
+    const segments = state.belts.slice(before);
+    const first = segments.find(belt => belt.x === route.start.x && belt.y === route.start.y) || segments[0];
+    const last = segments.find(belt => {
+      const end = getBeltEnd(belt);
+      return end.x === route.end.x && end.y === route.end.y;
+    }) || segments[segments.length - 1];
+    return { route, segments, first, last, prefix };
+  };
+  const installSorter = (building, belt, mode) => {
+    if (!building || !belt) return null;
+    const before = state.buildings.length;
+    placeSorterBetween(building, belt, mode);
+    return state.buildings.length > before ? state.buildings[state.buildings.length - 1] : null;
+  };
+
+  check(state.buildings.length === 1 && state.buildings[0].baseHub, '正常新档没有着陆仓储');
+  check(state.kits.wind === 2 && state.kits.miner === 1 && state.kits.smelter === 1, '开局必要建筑库存不符合生存式起步');
+  rebuildPowerGrids();
+  check(state.powerGeneration === 0, '未部署风机前不应有默认电力');
+
+  const beltKitsBefore = kitCount('belt');
+  craftRecipe('belt');
+  check(kitCount('belt') === beltKitsBefore + 4, '手搓传送带没有进入建筑库存');
+  const firstWind = deploy('wind', { x: -10, y: -4 });
+  const secondWind = deploy('wind', { x: -1, y: 0 });
+  const tower = deploy('powerTower', { x: -5, y: -3 });
+  craftRecipe('powerTower');
+  const secondTower = deploy('powerTower', { x: 0, y: -1 });
+  craftRecipe('powerTower');
+  const thirdTower = deploy('powerTower', { x: 2, y: 1 });
+  const miner = deploy('miner', { x: -8, y: -3 });
+  const smelter = deploy('smelter', { x: -3, y: -2 });
+  check(Boolean(firstWind && secondWind && tower && secondTower && thirdTower && miner && smelter), '开局建筑无法依靠库存完成部署');
+  check(miner?.nodeId === 'copper-north', '矿机没有绑定附近铜矿脉');
+  rebuildPowerGrids();
+  check(state.powerGeneration > 0 && !state.powerGrids.some(grid => grid.blackout), '风机部署后电网没有恢复');
+
+  for (let index = 0; index < 5; index += 1) craftRecipe('sorter');
+  check(kitCount('sorter') >= 5, '手搓分拣器没有补充到建筑库存');
+
+  const miningRoute = addRoute(miner, smelter, 'normal-mining');
+  check(Boolean(miningRoute?.first && miningRoute?.last), '矿机到冶炼机没有生成可用传送带');
+  const minerSorter = installSorter(miner, miningRoute?.first, 'output');
+  const smelterSorter = installSorter(smelter, miningRoute?.last, 'input');
+  check(Boolean(minerSorter && smelterSorter), '没有用库存安装矿机/冶炼机分拣器');
+
+  const lab = deploy('researchLab', { x: -1, y: 2 });
+  craftRecipe('solidStorage');
+  const labStorage = deploy('solidStorage', { x: 3, y: 5 });
+  check(Boolean(lab && labStorage), '科研站或独立固体仓储套件无法部署');
+  const storageToLab = addRoute(state.buildings[0], lab, 'normal-lab-input');
+  const labToStorage = addRoute(lab, labStorage, 'normal-lab-output');
+  check(Boolean(storageToLab?.first && storageToLab?.last && labToStorage?.first && labToStorage?.last), '科研站双向物流线路没有生成');
+  const storageOutputSorter = installSorter(state.buildings[0], storageToLab?.first, 'output');
+  const labInputSorter = installSorter(lab, storageToLab?.last, 'input');
+  const labOutputSorter = installSorter(lab, labToStorage?.first, 'output');
+  const storageInputSorter = installSorter(labStorage, labToStorage?.last, 'input');
+  check(Boolean(storageOutputSorter && labInputSorter && labOutputSorter && storageInputSorter), '科研站输入/输出分拣器没有完成安装');
+
+  state.research = { current: 'planetary-logistics', progress: 0 };
+  for (let tick = 0; tick < 40; tick += 1) simulateBuildings(1);
+  check(state.nodes.find(node => node.id === 'copper-north').amount < 62400, '正常路径没有发生真实采矿');
+  check((smelter.output.copperIngot || 0) > 0 || storageAmount('copperIngot') > startingStorageStock.copperIngot, '正常路径没有发生真实冶炼');
+  check(storageAmount('electromagneticCube') > 0 || (lab.output.electromagneticCube || 0) > 0, '正常路径没有通过物流产出电磁矩阵');
+  const researchBefore = state.research.progress;
+  simulateResearch(2);
+  check(state.research.progress > researchBefore, '正常路径科研没有消费物流仓储中的矩阵');
+  state.tool = 'inspect';
+  setDockCategory('tools');
+  check(state.tool === 'inspect', '正常路径 QA 污染了建造工具状态');
+
+  const passed = failures.length === 0;
+  const report = passed
+    ? 'QA PASS · 正常开局库存 → 手搓 → 风电 → 矿机/冶炼/科研物流'
+    : `QA FAIL · ${failures.join(' · ')}`;
+  document.body.dataset.qaResult = passed ? 'pass' : 'fail';
+  document.body.dataset.qaPath = 'normal';
+  const reportNode = document.createElement('div');
+  reportNode.className = `qa-report${passed ? '' : ' fail'}`;
+  reportNode.textContent = report;
+  query('#game-shell').append(reportNode);
+  showToast(report, passed ? 'ok' : 'warning');
+}
+
 function runQaPlaythrough() {
   const failures = [];
   // QA places an explicit wind generator and grants kits so it can exercise
@@ -296,7 +431,7 @@ function runQaPlaythrough() {
   state.inventory = { ...startingInventory, titanium: 0 };
   state.tech = [...startingTech];
   state.research = { current: null, progress: 0 };
-  state.interstellar = makeInterstellarState({ selectedPlanet: 'forge', cargo: 'processor' });
+  state.interstellar = makeInterstellarState({ selectedPlanet: 'forge', cargo: 'processor', returnCargo: 'titanium' });
   state.stellarProject = makeStellarProject();
   state.activePlanet = 'home';
   state.planetSnapshots = {};
@@ -489,14 +624,28 @@ function runQaPlaythrough() {
   check(state.interstellar.route?.phase === 'outbound', '货运舱未进入去程');
   simulateInterstellar(13);
   check(state.interstellar.route?.phase === 'returning', '货运舱未进入返航');
+  // The target cache is the remote factory's actual export buffer.  Nothing is
+  // granted by the route itself; this simulates a mined batch already waiting
+  // in the remote landing storage.
+  putInPlanetStorage('forge', 'titanium', 8);
   simulateInterstellar(13);
-  check(state.interstellar.completedTrips === 1 && storageAmount('titanium') === 8, '异星钛资源未回收到物流仓储');
+  check(state.interstellar.completedTrips === 1 && storageAmount('titanium') === 8, '异星仓储中的钛没有通过返程航线回到母星');
   const homeFactoryBeforeLanding = state.buildings;
   switchActivePlanet('forge');
   check(state.activePlanet === 'forge' && state.nodes.some(node => node.resource === 'titanium'), '完成航次后没有载入熔火-β的独立矿脉');
   check(state.buildings.length === 1 && state.buildings[0].baseHub, '远端星球没有生成独立着陆仓储');
+  const forgeStorage = state.buildings.find(building => building.baseHub);
+  forgeStorage.stock.titanium = 8;
+  state.buildings.push(
+    { ...makeBuilding('wind', 0, 0), id: 'qa-forge-wind' },
+    { ...makeBuilding('miner', -8, -4), id: 'qa-forge-miner', nodeId: 'forge-titanium-west' }
+  );
   switchActivePlanet('home');
   check(state.activePlanet === 'home' && state.buildings === homeFactoryBeforeLanding, '返回母星后没有恢复原工厂快照');
+  const forgeTitaniumBeforeOffline = planetStorageAmount('forge', 'titanium');
+  simulateBuildings(20);
+  check(planetStorageAmount('forge', 'titanium') > forgeTitaniumBeforeOffline, '远端矿机离开星球后没有把产出写入前哨仓储');
+  check(activeFactoryPlanetCount() >= 2, '远端前哨没有因为真实采集与发电进入工厂网络');
   researchQaTech('stellar-network');
   researchQaTech('logistics-mk5');
   check(getBuildingLevel('belt') === 5 && storageCapacity(storage) === 1400, '物流 Mk-V 没有达到五级速度与容量');
@@ -507,16 +656,38 @@ function runQaPlaythrough() {
   state.buildings = state.buildings.filter(building => building !== liquidStorage && building !== gasStorage);
   rebuildPowerGrids();
   researchQaTech('dyson-frame');
-  storage.stock = { structureCube: 80, titanium: 40, processor: 20 };
+  researchQaTech('advanced-materials');
+  researchQaTech('stellar-fabrication');
+  researchQaTech('orbital-construction');
+  storage.stock = { ...startingStorageStock, orbitNode: 20, solarSail: 1, structureRocket: 1, titanium: 40, processor: 20, structureCube: 80 };
   for (let index = 0; index < 20; index += 1) contributeStellarProject();
   check(state.stellarProject.progress === 100, '恒星工程未完成');
-  check(storageAmount('stellarFrame') >= 2, '戴森框架施工没有产出可建造的恒星框架组件');
-  const qaReceiver = makeBuilding('stellarReceiver', 20, 8);
+  check((state.stellarProject.nodesDeployed || 0) === 20 && storageAmount('orbitNode') === 0, '轨道节点施工没有消耗真实组件');
+  deployStellarComponent('sail');
+  deployStellarComponent('rocket');
+  const qaReceiver = makeBuilding('stellarReceiver', 6, 3);
   state.buildings.push(qaReceiver);
   rebuildPowerGrids();
   const energyBefore = state.stellarProject.energyStored;
-  simulateBuildings(2);
+  simulateBuildings(80);
   check(getPowerGeneration(qaReceiver) > 0 && state.stellarProject.energyStored > energyBefore, '恒星能量接收器没有把戴森框架转成可收集能源');
+  const stableStellarProject = JSON.parse(JSON.stringify(state.stellarProject));
+  const repairProbe = state.stellarProject.components.find(component => component.type === 'node');
+  if (repairProbe) {
+    repairProbe.remaining = repairProbe.maxLifetime * .5;
+    storage.stock.orbitNode = 1;
+    const repairMaterialBefore = storageAmount('orbitNode');
+    repairStellarComponents();
+    check(repairProbe.remaining === repairProbe.maxLifetime && storageAmount('orbitNode') === repairMaterialBefore - 1, '轨道组件维修没有消耗同类组件并恢复寿命');
+  }
+  const expiringProbe = state.stellarProject.components.find(component => component.type === 'sail') || state.stellarProject.components[0];
+  const componentCountBeforeExpiry = state.stellarProject.components.length;
+  if (expiringProbe) {
+    expiringProbe.remaining = .5;
+    simulateStellarEnergy(1);
+    check(state.stellarProject.components.length === componentCountBeforeExpiry - 1 && state.stellarProject.stabilitySeconds === 0, '轨道组件寿命耗尽后没有脱落并中断稳定计时');
+  }
+  state.stellarProject = stableStellarProject;
   const completedBuildings = state.buildings;
   const completedBelts = state.belts;
   const completedItems = state.items;
@@ -569,6 +740,7 @@ function runQaPlaythrough() {
   const qaCopperTarget = makeBuilding('assembler', -4, -8);
   const qaCopperInput = makeQaSorter(-2, -8, 'input');
   const qaIronTarget = makeBuilding('workbench', -4, 1);
+  qaIronTarget.recipeId = 'gear';
   const qaIronInput = makeQaSorter(-2, 1, 'input');
   state.buildings.push(qaSource, qaSorter, qaCopperTarget, qaCopperInput, qaIronTarget, qaIronInput);
   addQaRoute(qaSorter, qaCopperInput, 'qa-copper');
@@ -641,7 +813,7 @@ function runQaPlaythrough() {
   state.confirmRemoveId = null;
   const passed = failures.length === 0;
   const report = passed
-    ? 'QA PASS · 矿机→冶炼→矩阵生产 → 全设施授权/升级 → 分拣分流 → 星际去返 → 恒星工程 100%'
+    ? 'QA PASS · 矿机→冶炼→矩阵生产 → 分拣分流 → 真实星际仓储去返 → 轨道组件收能终局'
     : `QA FAIL · ${failures.join(' · ')}`;
   document.body.dataset.qaResult = passed ? 'pass' : 'fail';
   const reportNode = document.createElement('div');
