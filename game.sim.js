@@ -262,13 +262,16 @@ function salvageBuildingContents(building) {
   return salvaged;
 }
 
-function removeAt(cell) {
+function removeAt(cell, options = {}) {
+  const quiet = options.quiet === true;
   const building = findBuildingAt(cell);
   if (building) {
     if (isStorageType(building) && storageUsed(building) > 0 && state.confirmRemoveId !== building.id) {
-      state.confirmRemoveId = building.id;
-      showToast(`${buildings[building.type].label}内还有物资 · 再次点击确认拆除并回收`, 'warning');
-      return;
+      if (!quiet) {
+        state.confirmRemoveId = building.id;
+        showToast(`${buildings[building.type].label}内还有物资 · 再次点击确认拆除并回收`, 'warning');
+      }
+      return 'confirm';
     }
     state.confirmRemoveId = null;
     const nearbySorters = state.buildings.filter(entry => entry.type === 'sorter' && isAdjacentToBuilding({ x: entry.x, y: entry.y }, building));
@@ -289,8 +292,8 @@ function removeAt(cell) {
     const notes = [];
     if (salvaged > 0) notes.push(`回收货物 ${salvaged} 件`);
     if (orphanSorters.length) notes.push(`连带回收分拣器 ${orphanSorters.length} 台${orphanSalvaged > 0 ? `（货物 ${orphanSalvaged} 件）` : ''}`);
-    showToast(`${buildings[building.type].label} 已回收${notes.length ? ` · ${notes.join(' · ')}` : ''}`);
-    return;
+    if (!quiet) showToast(`${buildings[building.type].label} 已回收${notes.length ? ` · ${notes.join(' · ')}` : ''}`);
+    return 'building';
   }
   const beltIndex = state.belts.findIndex(belt => beltCells(belt).some(entry => entry.x === cell.x && entry.y === cell.y));
   if (beltIndex !== -1) {
@@ -310,10 +313,11 @@ function removeAt(cell) {
     state.selectedBeltId = null;
     state.items = state.items.filter(item => item.beltId !== belt.id);
     saveGame();
-    showToast(inFlight.length ? `传送带已回收 · 在途 ${inFlight.length} 件货物已转入随身库存` : '传送带已回收');
-    return;
+    if (!quiet) showToast(inFlight.length ? `传送带已回收 · 在途 ${inFlight.length} 件货物已转入随身库存` : '传送带已回收');
+    return 'belt';
   }
-  showToast('这里没有可拆除对象', 'warning');
+  if (!quiet) showToast('这里没有可拆除对象', 'warning');
+  return null;
 }
 
 function findBeltStartingNear(building, resource) {
@@ -781,6 +785,39 @@ function getResearchSpeed() {
   return activeCareerEffect('research') ? 1.3 : 1;
 }
 
+function noteProduced(resource, amount = 1, buildingId = null) {
+  if (!state.production) state.production = { second: -1, current: {}, history: [] };
+  const production = state.production;
+  const second = Math.floor(state.time);
+  if (production.second !== second) {
+    if (production.second >= 0 && Object.keys(production.current).length) {
+      production.history.push({ second: production.second, counts: production.current });
+    }
+    production.second = second;
+    production.current = {};
+    production.history = production.history.filter(entry => second - entry.second <= 60);
+  }
+  production.current[resource] = (production.current[resource] || 0) + amount;
+  if (buildingId) production.current[`#${buildingId}`] = (production.current[`#${buildingId}`] || 0) + amount;
+}
+
+function productionRate(resource) {
+  const production = state.production;
+  if (!production) return 0;
+  let total = production.current?.[resource] || 0;
+  production.history.forEach(entry => { total += entry.counts?.[resource] || 0; });
+  return total;
+}
+
+function buildingProductionRate(buildingId) {
+  const production = state.production;
+  if (!production || !buildingId) return 0;
+  const key = `#${buildingId}`;
+  let total = production.current?.[key] || 0;
+  production.history.forEach(entry => { total += entry.counts?.[key] || 0; });
+  return total;
+}
+
 function simulateBuildings(dt) {
   rebuildPowerGrids();
 
@@ -806,6 +843,7 @@ function simulateBuildings(dt) {
       if (building.timer >= extractionTime && Object.values(building.output).reduce((a, b) => a + b, 0) < 5) {
         building.timer = 0;
         building.output[node.resource] = (building.output[node.resource] || 0) + 1;
+        noteProduced(node.resource, 1, building.id);
         node.amount -= 1;
       }
     }
@@ -820,6 +858,7 @@ function simulateBuildings(dt) {
         building.input[raw] -= 1;
         const output = raw === 'silicon' ? 'siliconWafer' : `${raw}Ingot`;
         building.output[output] = (building.output[output] || 0) + 1;
+        noteProduced(output, 1, building.id);
       }
     }
 
@@ -834,6 +873,7 @@ function simulateBuildings(dt) {
         building.process = 0;
         consumeRecipeInputs(building.input, recipe);
         building.output[recipe.output] = (building.output[recipe.output] || 0) + 1;
+        noteProduced(recipe.output, 1, building.id);
       }
     }
 
@@ -855,6 +895,7 @@ function simulateBuildings(dt) {
         building.process = 0;
         consumeRecipeInputs(building.input, recipe);
         building.output[cube] = (building.output[cube] || 0) + 1;
+        noteProduced(cube, 1, building.id);
       }
     }
 

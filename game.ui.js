@@ -1212,6 +1212,15 @@ function updateHUD() {
   query('#power-readout').style.color = state.powerSummary.blackoutCount > 0 ? '#ee6a65' : state.powerSummary.highLoadCount > 0 ? '#ff9b3d' : '#62d69a';
   query('#power-fill').style.width = `${clamp(Number.isFinite(totalLoadRatio) ? totalLoadRatio * 100 : 100, 4, 100)}%`;
   query('#power-fill').style.background = state.powerSummary.blackoutCount > 0 ? '#ee6a65' : state.powerSummary.highLoadCount > 0 ? '#ff9b3d' : '#62d69a';
+  const rateResources = ['iron', 'copper', 'silicon', 'ironIngot', 'copperIngot', 'siliconWafer', 'processor', 'electromagneticCube', 'energyCube', 'structureCube', 'informationCube'];
+  const shownRates = rateResources
+    .map(resource => ({ resource, rate: productionRate(resource) }))
+    .filter(entry => entry.rate > 0)
+    .sort((left, right) => right.rate - left.rate)
+    .slice(0, 4);
+  query('#production-rates').textContent = shownRates.length
+    ? shownRates.map(entry => `${resources[entry.resource].label} ${Math.round(entry.rate)}/分`).join(' · ')
+    : '暂无产出';
   query('#craft-button-state').textContent = `可用 ${Object.values(state.kits).reduce((total, amount) => total + Math.floor(amount || 0), 0)}`;
   const modeLabel = state.tool === 'inspect' ? '检视模式' : state.tool === 'demolish' ? '拆除模式' : buildings[state.tool]?.label || '传送带';
   query('#tool-label').textContent = modeLabel;
@@ -1285,6 +1294,7 @@ function updateHUD() {
     query('#selection-output').textContent = `${beltItems.length} 件运输中`;
     query('#selection-recipe').textContent = `方向 ${direction} · 起点 ${selectedBelt.x},${selectedBelt.y}`;
     query('#selection-recipe').style.cursor = 'default';
+    query('#selection-production').textContent = '—';
     query('#selection-tech').textContent = '基础物流授权 · 已接入';
     const beltLevel = getBuildingLevel('belt');
     query('#selection-license').textContent = `MK-${beltLevel} · ${getBeltTravelFactor().toFixed(2)} 格/秒`;
@@ -1311,6 +1321,8 @@ function updateHUD() {
     query('#selection-output').textContent = output ? `${formatNumber(output[1])} 单位缓存` : ['miner', 'oilExtractor', 'waterPump', 'gasExtractor'].includes(selected.type) ? '采掘中 · 等待输出' : '等待产出';
     query('#selection-recipe').textContent = buildingRecipeText(selected);
     query('#selection-recipe').style.cursor = selected.type === 'smelter' ? 'pointer' : 'default';
+    const selectionProduction = buildingProductionRate(selected.id);
+    query('#selection-production').textContent = selectionProduction > 0 ? `≈ ${Math.round(selectionProduction)} 件 / 分` : '近一分钟无产出';
     query('#selection-tech').textContent = isBuildingUnlocked(selected.type) ? `${buildingTechName(selected.type)} · 已授权` : `需完成「${buildingTechName(selected.type)}」`;
     const selectionLevel = isBuildingUnlocked(selected.type) ? `MK-${Math.min(getBuildingLevel(selected.type), 5)}` : '锁定';
     query('#selection-license').textContent = `${selectionLevel} · ${isBuildingUnlocked(selected.type) ? '可运行' : '等待科技'}`;

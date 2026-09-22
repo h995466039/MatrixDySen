@@ -590,3 +590,9 @@ body { font-size: 14px; }
 @media (prefers-reduced-motion: reduce) {
   .dock-category-button, .goal-progress i { transition: none; }
 }
+
+/* 近一分钟产量（S4 统计） */
+.production-stat { flex: 1.4 1 0; min-width: 132px; height: 34px; display: flex; align-items: center; padding: 2px 8px; border-left: 1px solid var(--line); }
+.production-stat span { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.production-stat small { color: var(--faint); font-size: 9px; letter-spacing: .08em; }
+.production-stat b { color: var(--lime); font-size: 11px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

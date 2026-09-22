@@ -112,6 +112,26 @@ query('#sorter-interface').addEventListener('click', event => {
 });
 
 canvas.addEventListener('contextmenu', event => event.preventDefault());
+
+function demolishDragTo(from, to) {
+  if (!from || !to) return;
+  let x = from.x;
+  let y = from.y;
+  const dx = Math.abs(to.x - x);
+  const dy = Math.abs(to.y - y);
+  const sx = x < to.x ? 1 : -1;
+  const sy = y < to.y ? 1 : -1;
+  let err = dx - dy;
+  while (x !== to.x || y !== to.y) {
+    const e2 = 2 * err;
+    if (e2 > -dy) { err -= dy; x += sx; }
+    if (e2 < dx) { err += dx; y += sy; }
+    const outcome = removeAt({ x, y }, { quiet: true });
+    if (outcome === 'building' || outcome === 'belt') {
+      state.pointer.demolishCount = (state.pointer.demolishCount || 0) + 1;
+    }
+  }
+}
 canvas.addEventListener('pointermove', event => {
   if (state.pointer.panning) {
     const dx = event.clientX - state.pointer.lastX;
@@ -121,6 +141,13 @@ canvas.addEventListener('pointermove', event => {
     state.pointer.lastX = event.clientX; state.pointer.lastY = event.clientY;
   }
   state.pointer.cell = screenToCell(event.clientX, event.clientY);
+  if (state.tool === 'demolish' && state.pointer.demolishActive && state.pointer.cell) {
+    const last = state.pointer.demolishLast;
+    if (!last || last.x !== state.pointer.cell.x || last.y !== state.pointer.cell.y) {
+      demolishDragTo(last || state.pointer.cell, state.pointer.cell);
+      state.pointer.demolishLast = { ...state.pointer.cell };
+    }
+  }
   if (state.tool === 'belt' && state.pointer.startBuildingId) {
     const source = state.buildings.find(building => building.id === state.pointer.startBuildingId);
     if (source) state.pointer.startCell = buildingPortToward(source, state.pointer.cell);
@@ -162,7 +189,13 @@ canvas.addEventListener('pointerdown', event => {
     canvas.setPointerCapture(event.pointerId);
     return;
   }
-  if (state.tool === 'demolish') removeAt(state.pointer.cell);
+  if (state.tool === 'demolish') {
+    state.pointer.demolishActive = true;
+    state.pointer.demolishLast = { ...state.pointer.cell };
+    state.pointer.demolishCount = 0;
+    removeAt(state.pointer.cell);
+    canvas.setPointerCapture(event.pointerId);
+  }
   else if (state.tool === 'inspect') {
     const existing = findBuildingAt(state.pointer.cell);
     if (existing) {
@@ -216,6 +249,13 @@ window.addEventListener('pointerup', () => {
   state.pointer.startCell = null;
   state.pointer.startBuildingId = null;
   state.pointer.sorterAnchor = null;
+  if (state.pointer.demolishActive) {
+    state.pointer.demolishActive = false;
+    const total = state.pointer.demolishCount || 0;
+    if (total > 0) showToast(`拖拽拆除 · 共回收 ${total} 处`);
+    state.pointer.demolishCount = 0;
+    state.pointer.demolishLast = null;
+  }
 });
 canvas.addEventListener('wheel', event => {
   event.preventDefault();
@@ -227,6 +267,8 @@ canvas.addEventListener('wheel', event => {
   state.camera.y += before.y - after.y;
   if (oldZoom !== state.zoom) showToast(`视野缩放 · ${Math.round(state.zoom * 100)}%`);
 }, { passive: false });
+
+const toolHotkeys = { q: 'sorter', e: 'solidStorage', f: 'researchLab', g: 'wind', h: 'thermal', z: 'workbench', x: 'oilExtractor', v: 'gasExtractor', y: 'liquidStorage', u: 'gasStorage', i: 'logisticsStation' };
 
 document.addEventListener('keydown', event => {
   if (event.target.tagName === 'INPUT') return;
@@ -249,6 +291,8 @@ document.addEventListener('keydown', event => {
   }
   if (event.key === '0') selectTool('inspect');
   if (event.key >= '1' && event.key <= '9') selectTool(['miner', 'smelter', 'assembler', 'belt', 'demolish', 'waterPump', 'powerTower', 'longPowerTower', 'ultraPowerTower'][Number(event.key) - 1]);
+  const toolHotkey = toolHotkeys[event.key.toLowerCase()];
+  if (toolHotkey) selectTool(toolHotkey);
   if (event.key.toLowerCase() === 'r' && state.tool !== 'inspect' && state.tool !== 'belt' && state.tool !== 'demolish') { state.rotation = (state.rotation + 90) % 360; showToast(`建筑朝向 ${state.rotation}°`); }
   if (event.key.toLowerCase() === 't') toggleTechPanel();
   if (event.key.toLowerCase() === 'm') toggleStarMap();

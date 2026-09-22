@@ -693,7 +693,8 @@ const state = {
   powerSummary: { gridCount: 0, highLoadCount: 0, blackoutCount: 0, generation: 0, load: 0 },
   simulationSpeed: 1,
   sorterRoutingSignature: '',
-  assetFallbacks: 0
+  assetFallbacks: 0,
+  production: { second: -1, current: {}, history: [] }
 };
 {
   const savedBeltIds = new Set(state.belts.map(belt => belt.id));
