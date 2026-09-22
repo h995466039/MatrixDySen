@@ -485,6 +485,47 @@ function putInStorage(resource, amount) {
   return amount - remaining;
 }
 
+// —— 载入期安全区 ——
+// readSave() 在 core 顶层同步执行；其调用链（repairSavedBuildingFootprints →
+// normalizeSavedBuildings）会同步用到下面这些函数。它们必须定义在 core，
+// 否则读档时抛出 ReferenceError 被 readSave 的 catch 吞掉 → 存档静默回退为新档。
+// 禁止把其中任何一个移回 world/sim 文件。
+function isInsideWorld(cell) {
+  return Boolean(cell)
+    && cell.x >= WORLD_BOUNDS.minX && cell.x <= WORLD_BOUNDS.maxX
+    && cell.y >= WORLD_BOUNDS.minY && cell.y <= WORLD_BOUNDS.maxY;
+}
+
+function terrainAt(cell) {
+  if (!isInsideWorld(cell)) return { kind: 'void', label: '地图边界', short: '边界' };
+  return terrainRegions.find(region => cell.x >= region.minX && cell.x <= region.maxX && cell.y >= region.minY && cell.y <= region.maxY)
+    || { kind: 'plain', label: '稳定平原', short: '平原' };
+}
+
+function isTerrainBlocked(cell) {
+  return terrainAt(cell).kind === 'rock' || terrainAt(cell).kind === 'water' || terrainAt(cell).kind === 'void';
+}
+
+function footprintCells(cell, size) {
+  const cells = [];
+  for (let x = 0; x < size; x += 1) {
+    for (let y = 0; y < size; y += 1) cells.push({ x: cell.x + x, y: cell.y + y });
+  }
+  return cells;
+}
+
+function inputCapacity(building) {
+  if (!building) return 0;
+  if (building.type === 'researchLab') return 6;
+  if (building.type === 'smelter' || building.type === 'thermal') return 8;
+  if (building.type === 'assembler' || building.type === 'workbench') return 6;
+  return 4;
+}
+
+function outputCapacity(building) {
+  return ['miner', 'oilExtractor', 'waterPump', 'gasExtractor'].includes(building?.type) ? 5 : 6;
+}
+
 function normalizeSavedBuildings(savedBuildings) {
   return savedBuildings.filter(building => building && buildings[building.type]).map(building => {
     const normalized = {
@@ -609,7 +650,8 @@ function readSave() {
       careerChosen: saved.careerChosen !== false,
       powerMigration: hasPowerConsumer && !hasTransmissionTower
     };
-  } catch {
+  } catch (error) {
+    console.error('读档失败，已回退为新档（请把此错误发回排查）:', error);
     return null;
   }
 }

@@ -399,18 +399,6 @@ function accepts(building, resource) {
   return mode === 'input' && Boolean(target) && acceptsBuildingResource(target, resource) && sorterInputBelts(building).length > 0;
 }
 
-function inputCapacity(building) {
-  if (!building) return 0;
-  if (building.type === 'researchLab') return 6;
-  if (building.type === 'smelter' || building.type === 'thermal') return 8;
-  if (building.type === 'assembler' || building.type === 'workbench') return 6;
-  return 4;
-}
-
-function outputCapacity(building) {
-  return ['miner', 'oilExtractor', 'waterPump', 'gasExtractor'].includes(building?.type) ? 5 : 6;
-}
-
 function deliver(building, resource) {
   // Belts may terminate at a sorter only. The sorter simulation owns the
   // second hop into a machine or warehouse, keeping the logistics contract

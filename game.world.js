@@ -1,30 +1,6 @@
 // 星环回声 · game.world.js — 地形/相机/场景渲染/矿脉与传送带·分拣器绘制与吸附
 // （由 game.js 拆分于 2026-09-22，加载顺序：core → world → sim → ui → tools → main）
 
-function isInsideWorld(cell) {
-  return Boolean(cell)
-    && cell.x >= WORLD_BOUNDS.minX && cell.x <= WORLD_BOUNDS.maxX
-    && cell.y >= WORLD_BOUNDS.minY && cell.y <= WORLD_BOUNDS.maxY;
-}
-
-function terrainAt(cell) {
-  if (!isInsideWorld(cell)) return { kind: 'void', label: '地图边界', short: '边界' };
-  return terrainRegions.find(region => cell.x >= region.minX && cell.x <= region.maxX && cell.y >= region.minY && cell.y <= region.maxY)
-    || { kind: 'plain', label: '稳定平原', short: '平原' };
-}
-
-function isTerrainBlocked(cell) {
-  return terrainAt(cell).kind === 'rock' || terrainAt(cell).kind === 'water' || terrainAt(cell).kind === 'void';
-}
-
-function footprintCells(cell, size) {
-  const cells = [];
-  for (let x = 0; x < size; x += 1) {
-    for (let y = 0; y < size; y += 1) cells.push({ x: cell.x + x, y: cell.y + y });
-  }
-  return cells;
-}
-
 function activeCareer() {
   return careerCatalog[state.career] || careerCatalog.logistics;
 }
