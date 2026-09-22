@@ -40,8 +40,29 @@ const assetPaths = {
   rockTile: 'output/imagegen/godot-v02-ground-tile.png',
   waterTile: 'godot_game/assets/generated/terrain_water_tile_v01.png',
 };
+const assetSvgFallbacks = {
+  miner: 'godot_game/assets/generated/building_miner.svg',
+  smelter: 'godot_game/assets/generated/building_smelter.svg',
+  researchLab: 'godot_game/assets/generated/building_research.svg',
+  sorter: 'godot_game/assets/generated/building_sorter.svg',
+  storage: 'godot_game/assets/generated/building_storage.svg',
+  copper: 'godot_game/assets/generated/resource_copper.svg',
+  iron: 'godot_game/assets/generated/resource_iron.svg',
+  electromagneticCube: 'godot_game/assets/generated/resource_matrix.svg',
+  groundTile: 'godot_game/assets/generated/ground_tile.svg',
+  rockTile: 'godot_game/assets/generated/ground_tile.svg'
+};
 Object.entries(assetPaths).forEach(([key, path]) => {
   const image = new Image();
+  const fallback = assetSvgFallbacks[key];
+  if (fallback) {
+    // 初代矢量占位素材：PNG 缺失时用 SVG 兜底，让"被取代的素材"重新上岗。
+    image.addEventListener('error', () => {
+      if (image.dataset.svgFallback === '1') return;
+      image.dataset.svgFallback = '1';
+      image.src = fallback;
+    });
+  }
   image.src = path;
   assets[key] = image;
 });
@@ -468,6 +489,7 @@ function readSave() {
       research: saved.research && typeof saved.research === 'object' ? saved.research : { current: null, progress: 0 },
       interstellar: makeInterstellarState(saved.interstellar),
       stellarProject: makeStellarProject(saved.stellarProject),
+      items: Array.isArray(saved.items) ? saved.items : [],
       career: saved.career || 'logistics',
       careerChosen: saved.careerChosen !== false,
       powerMigration: hasPowerConsumer && !hasTransmissionTower
@@ -492,7 +514,9 @@ const state = {
   buildings: saved?.buildings || [(() => { const storage = makeBuilding('storage', 3, -1); storage.baseHub = true; storage.stock = { ...startingStorageStock }; return storage; })()],
   belts: saved?.belts || [],
   nodes: saved?.nodes || initialNodeState.map(node => ({ ...node })),
-  items: [],
+  items: (saved?.items || [])
+    .filter(item => item && item.beltId && (saved?.belts || []).some(belt => belt.id === item.beltId))
+    .map(item => ({ id: item.id, beltId: item.beltId, sourceId: item.sourceId || null, resource: item.resource, progress: clamp(Number(item.progress) || 0, 0, 1), wait: 0, retry: .5 })),
   inventory: { ...startingInventory, ...(saved?.inventory || {}) },
   kits: { ...startingKits, ...(saved?.kits || {}) },
   time: saved?.time ?? 6 * 3600,
@@ -573,6 +597,7 @@ function saveGame() {
     research: state.research,
     interstellar: state.interstellar,
     stellarProject: state.stellarProject,
+    items: state.items.map(item => ({ id: item.id, beltId: item.beltId, sourceId: item.sourceId, resource: item.resource, progress: item.progress })),
     career: state.career || 'logistics',
     careerChosen: state.careerChosen
     }));
@@ -4342,9 +4367,47 @@ function runQaPlaythrough() {
   state.selectedId = null;
   state.selectedBeltId = null;
   simulateBuildings(.01);
+  // 回归批次 01/02：拆除回收 / 仓储双确认 / 冶炼机断料保护 / 死端货物回收
+  const qaRegressionBuildings = state.buildings;
+  const qaRegressionBelts = state.belts;
+  const qaRegressionItems = state.items;
+  const qaRegressionInventory = { ...state.inventory };
+  const qaRegressionKits = { ...state.kits };
+  const qaSalvageStorage = makeBuilding('storage', -16, -10);
+  qaSalvageStorage.stock = { iron: 12 };
+  const qaSalvageSmelter = makeBuilding('smelter', -13, -10);
+  qaSalvageSmelter.output = { copperIngot: 3 };
+  state.buildings = [qaSalvageStorage, qaSalvageSmelter];
+  state.belts = [];
+  state.items = [];
+  state.inventory.iron = 0;
+  state.inventory.copperIngot = 0;
+  removeAt({ x: qaSalvageSmelter.x, y: qaSalvageSmelter.y });
+  check(state.inventory.copperIngot >= 3, '拆除建筑时输出缓存没有回收进随身库存');
+  removeAt({ x: qaSalvageStorage.x, y: qaSalvageStorage.y });
+  check(state.buildings.some(building => building.id === qaSalvageStorage.id), '有货仓储第一次拆除没有被二次确认拦截');
+  removeAt({ x: qaSalvageStorage.x, y: qaSalvageStorage.y });
+  check(!state.buildings.some(building => building.id === qaSalvageStorage.id) && state.inventory.iron >= 12, '有货仓储二次确认后没有拆除或库存丢失');
+  const qaStarvedSmelter = makeBuilding('smelter', 0, 0);
+  qaStarvedSmelter.recipeResource = 'copper';
+  qaStarvedSmelter.process = 999;
+  state.buildings = [qaStarvedSmelter];
+  simulateBuildings(1); simulateBuildings(1);
+  check((qaStarvedSmelter.input.copper || 0) >= 0 && !(qaStarvedSmelter.output.copperIngot > 0), '冶炼机断料时仍会扣成负数或凭空产出');
+  state.buildings = [];
+  state.belts = [{ id: 'qa-dead-belt', x: 0, y: 4, dx: 1, dy: 0, length: 3 }];
+  state.items = [{ id: 'qa-dead-item', beltId: 'qa-dead-belt', sourceId: 'qa-none', resource: 'iron', progress: 1 }];
+  state.inventory.iron = 0;
+  for (let step = 0; step < 220; step += 1) simulateBuildings(.2);
+  check(state.items.length === 0 && state.inventory.iron >= 1, '死端传送带上的货物没有在超时后自动回收');
+  state.buildings = qaRegressionBuildings;
+  state.belts = qaRegressionBelts;
+  state.items = qaRegressionItems;
+  state.inventory = qaRegressionInventory;
+  state.kits = qaRegressionKits;
   const passed = failures.length === 0;
   const report = passed
-    ? 'QA PASS · 矿机→冶炼→矩阵生产 → 全设施授权/升级 → 分拣分流 → 星际去返 → 恒星工程 100%'
+    ? 'QA PASS · 矿机→冶炼→矩阵生产 → 全设施授权/升级 → 分拣分流 → 星际去返 → 恒星工程 100% → 拆除/补料/断料回归'
     : `QA FAIL · ${failures.join(' · ')}`;
   document.body.dataset.qaResult = passed ? 'pass' : 'fail';
   const reportNode = document.createElement('div');
