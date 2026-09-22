@@ -575,3 +575,63 @@ button:focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; }
 .power-tower-icon { color: var(--cyan); }
 .long-power-tower-icon { color: #8ccfff; }
 .ultra-power-tower-icon { color: #c58cff; }
+
+/* Technology tree: category lanes keep the full dependency map readable without turning the map into a wall of copy. */
+.tech-panel {
+  width: min(980px, calc(100vw - 48px));
+  padding: 20px;
+}
+.tech-tree-section { margin-top: 16px; }
+.tech-tree-toolbar { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 10px; }
+.tech-tree-toolbar h3 { margin: 5px 0 3px; color: var(--ink); font-size: 15px; }
+.tech-tree-toolbar p { margin: 0; color: var(--muted); font-size: 9px; }
+.tech-category-tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 3px; }
+.tech-category-tab { min-width: 94px; display: grid; gap: 3px; padding: 8px 10px; border: 1px solid var(--line); color: var(--muted); background: rgba(14, 31, 45, .72); text-align: left; }
+.tech-category-tab b { color: var(--ink); font-size: 11px; }
+.tech-category-tab small { color: var(--faint); font-size: 8px; }
+.tech-category-tab:hover, .tech-category-tab:focus-visible { border-color: var(--cyan); background: rgba(105, 216, 218, .1); }
+.tech-category-tab.active { border-color: var(--lime); background: rgba(199, 217, 76, .11); }
+.tech-category-tab.active b { color: var(--lime); }
+.tech-tree { display: grid; gap: 14px; margin-top: 13px; }
+.tech-lane { min-width: 0; padding: 12px 0 13px; border-top: 1px solid var(--line); }
+.tech-lane-heading { display: flex; align-items: end; justify-content: space-between; gap: 14px; margin-bottom: 9px; }
+.tech-lane-kicker { color: var(--cyan); font-size: 8px; letter-spacing: .12em; }
+.tech-lane-heading h3 { margin: 4px 0 2px; color: var(--ink); font-size: 14px; }
+.tech-lane-heading p { margin: 0; color: var(--muted); font-size: 9px; }
+.tech-lane-count { color: var(--lime); font-size: 10px; white-space: nowrap; }
+.tech-lane-scroll { overflow-x: auto; padding: 2px 1px 5px; }
+.tech-lane-track { display: flex; align-items: stretch; min-width: max-content; }
+.tech-step { position: relative; display: flex; align-items: stretch; flex: 0 0 226px; padding-top: 14px; }
+.tech-step-index { position: absolute; left: 0; top: 0; color: var(--faint); font-size: 8px; letter-spacing: .12em; }
+.tech-step .tech-node { width: 226px; min-height: 230px; flex: 0 0 226px; padding: 11px; }
+.tech-connector { position: relative; display: flex; flex: 0 0 52px; align-items: center; justify-content: center; color: var(--faint); }
+.tech-connector i { width: 32px; height: 1px; background: var(--line-bright); }
+.tech-connector i::after { content: ""; position: absolute; width: 5px; height: 5px; margin: -2px 0 0 27px; border-top: 1px solid var(--line-bright); border-right: 1px solid var(--line-bright); transform: rotate(45deg); }
+.tech-connector b { position: absolute; top: 44%; padding: 0 3px; color: var(--faint); background: var(--panel-strong); font-size: 7px; font-weight: 400; }
+.tech-node-detail { display: -webkit-box; max-height: 40px; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.tech-node-dependency { display: grid; gap: 3px; min-height: 31px; overflow: hidden; margin-top: 2px; color: var(--faint); font-size: 8px; line-height: 1.3; }
+.tech-node-dependency span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tech-node-dependency span:first-child { color: var(--muted); }
+.tech-node-dependency span:last-child { color: var(--cyan); }
+.tech-node-action { margin-top: 3px; }
+.tech-lane-mainline .tech-node { border-color: rgba(105, 216, 218, .42); }
+.tech-lane-logistics .tech-node { border-color: rgba(140, 207, 255, .3); }
+.tech-lane-energy .tech-node { border-color: rgba(255, 155, 61, .32); }
+.tech-lane-industry .tech-node { border-color: rgba(199, 217, 76, .3); }
+.tech-lane-stellar .tech-node { border-color: rgba(197, 140, 255, .32); }
+.tech-lane .tech-node.researched { border-color: rgba(98, 214, 154, .62); }
+.tech-lane .tech-node.researching { border-color: var(--cyan); }
+.tech-lane .tech-node.locked { border-color: rgba(137, 181, 198, .14); }
+
+@media (max-width: 900px) {
+  .tech-panel { width: min(720px, calc(100vw - 28px)); right: 14px; }
+}
+@media (max-width: 620px) {
+  .tech-panel { width: calc(100vw - 20px); right: 10px; padding: 13px; }
+  .tech-tree-toolbar { align-items: start; }
+  .tech-step, .tech-step .tech-node { flex-basis: 210px; width: 210px; }
+  .tech-step .tech-node { min-height: 218px; }
+  .tech-connector { flex-basis: 38px; }
+  .tech-connector i { width: 24px; }
+  .tech-connector i::after { margin-left: 19px; }
+}

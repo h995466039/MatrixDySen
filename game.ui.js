@@ -1,6 +1,8 @@
 // 星环回声 · game.ui.js — 星图/科技/职业/工坊面板 + 工厂诊断/HUD
 // （由 game.js 拆分于 2026-09-22，加载顺序：core → world → sim → ui → tools → main）
 
+let activeTechCategory = 'all';
+
 function updateStellarProjectUI() {
   const section = query('#stellar-project');
   if (!section) return;
@@ -242,20 +244,24 @@ function formatCost(cost) {
   return Object.entries(cost).map(([resource, amount]) => `${resources[resource]?.label || resource} ${amount}`).join(' · ');
 }
 
-function techNodeMarkup(tech, mainline = false) {
+function techNodeMarkup(tech, category = techCategoryFor(tech.id)) {
   const unlocked = isTechUnlocked(tech.id);
   const available = hasTechPrerequisites(tech);
   const active = state.research.current === tech.id;
   const locked = !unlocked && !available;
+  const mainline = category === 'mainline';
   const cube = resources[tech.cube] || { label: tech.cube, color: '#69d8da' };
   const requirement = tech.requires?.length
     ? tech.requires.map(id => techById[id]?.label || id).join(' / ')
     : '基础权限';
+  const nextTech = techNodes
+    .filter(candidate => candidate.requires?.includes(tech.id))
+    .map(candidate => candidate.label);
   const unlocks = techUnlockText(tech) || '扩展研究权限';
   const upgrades = techUpgradeText(tech);
   const progress = active ? state.research.progress : unlocked ? tech.cost : 0;
   const percent = clamp((progress / tech.cost) * 100, 0, 100);
-  const classes = ['tech-node', mainline ? 'mainline-node' : 'branch-node'];
+  const classes = ['tech-node', mainline ? 'mainline-node' : 'branch-node', `tech-category-${category}`];
   if (unlocked) classes.push('researched');
   if (active) classes.push('researching');
   if (locked) classes.push('locked');
@@ -265,16 +271,54 @@ function techNodeMarkup(tech, mainline = false) {
     <span class="tech-node-short">${tech.short}</span>
     <span class="tech-node-detail">${tech.description}</span>
     <span class="tech-node-footer"><span class="cube-key" style="--cube-color:${cube.color}">${cube.label} ×${tech.cost}</span><span>${unlocks}</span>${upgrades ? `<span class="tech-node-upgrade">${upgrades}</span>` : ''}<span class="tech-node-effect">${tech.effectText || '扩展研究权限'}</span></span>
-    <span class="tech-node-requirement">前置：${requirement}</span>
+    <span class="tech-node-dependency"><span>前置 · ${requirement}</span><span>${nextTech.length ? `后续 · ${nextTech.join(' / ')}` : '后续 · 终点节点'}</span></span>
     <span class="tech-node-progress"><i style="width:${percent}%"></i></span>
     <span class="tech-node-action">${unlocked ? '研究完成' : active ? '正在消耗矩阵' : locked ? '等待前置' : '开始研究'}</span>
-  </button>${mainline ? '<span class="tech-link" aria-hidden="true"></span>' : ''}`;
+  </button>`;
+}
+
+function techNodesForCategory(category) {
+  if (category === 'mainline') return techTree.mainline;
+  if (category === 'all') return techNodes.filter(tech => tech.id !== 'foundation');
+  return techTree.branches.filter(tech => techCategoryFor(tech.id) === category);
+}
+
+function techCategoryMarkup(category) {
+  const meta = techCategoryMeta[category];
+  const nodes = techNodesForCategory(category);
+  if (!nodes.length) return '';
+  const unlocked = nodes.filter(tech => isTechUnlocked(tech.id)).length;
+  const laneNodes = nodes.map((tech, index) => `<div class="tech-step"><span class="tech-step-index">${String(index + 1).padStart(2, '0')}</span>${techNodeMarkup(tech, techCategoryFor(tech.id))}${index < nodes.length - 1 ? '<span class="tech-connector" aria-hidden="true"><i></i><b>之后</b></span>' : ''}</div>`).join('');
+  return `<section class="tech-lane tech-lane-${category}" data-tech-lane="${category}" aria-labelledby="tech-lane-title-${category}">
+    <header class="tech-lane-heading"><div><span class="tech-lane-kicker">${meta.short}</span><h3 id="tech-lane-title-${category}">${meta.label}</h3><p>${meta.note}</p></div><span class="tech-lane-count">${unlocked} / ${nodes.length}</span></header>
+    <div class="tech-lane-scroll"><div class="tech-lane-track">${laneNodes}</div></div>
+  </section>`;
 }
 
 function renderTechPanel() {
-  query('#mainline-tech').innerHTML = techTree.mainline.map(tech => techNodeMarkup(tech, true)).join('');
-  query('#branch-tech').innerHTML = techTree.branches.map(tech => techNodeMarkup(tech)).join('');
+  const tabs = query('#tech-category-tabs');
+  const tree = query('#tech-tree');
+  if (!tabs || !tree) return;
+  tabs.innerHTML = [
+    `<button type="button" class="tech-category-tab${activeTechCategory === 'all' ? ' active' : ''}" data-tech-category="all"><b>总览</b><small>全部路线</small></button>`,
+    ...techCategoryOrder.map(category => {
+      const meta = techCategoryMeta[category];
+      const count = techNodesForCategory(category).filter(tech => isTechUnlocked(tech.id)).length;
+      return `<button type="button" class="tech-category-tab${activeTechCategory === category ? ' active' : ''}" data-tech-category="${category}"><b>${meta.label}</b><small>${count}/${techNodesForCategory(category).length}</small></button>`;
+    })
+  ].join('');
+  tree.innerHTML = activeTechCategory === 'all'
+    ? techCategoryOrder.map(techCategoryMarkup).join('')
+    : techCategoryMarkup(activeTechCategory);
+  all('[data-tech-category]').forEach(button => button.addEventListener('click', () => {
+    activeTechCategory = button.dataset.techCategory;
+    renderTechPanel();
+  }));
   all('[data-research]').forEach(button => button.addEventListener('click', () => startResearch(button.dataset.research)));
+  const total = techNodes.length - 1;
+  const researched = techNodes.filter(tech => tech.id !== 'foundation' && isTechUnlocked(tech.id)).length;
+  const meta = query('#tech-tree-meta');
+  if (meta) meta.textContent = `${researched} / ${total} 项已完成 · 点击可研究节点开始推进 · 节点之间按前置顺序排列`;
   updateResearchUI();
 }
 
@@ -313,8 +357,10 @@ function updateResearchUI() {
   diagnosticAction.hidden = !panelDiagnostic?.action;
   diagnosticAction.textContent = panelDiagnostic?.action || '处理缺口';
   query('#tech-button-state').textContent = tech ? `研究 ${Math.floor(percent)}%` : `${state.tech.filter(id => techTree.mainline.some(node => node.id === id)).length}/${techTree.mainline.length}`;
-  query('#mainline-count').textContent = `${techTree.mainline.filter(node => isTechUnlocked(node.id)).length} / ${techTree.mainline.length}`;
-  query('#branch-count').textContent = `${techTree.branches.filter(node => isTechUnlocked(node.id)).length} / ${techTree.branches.length}`;
+  const totalTechs = techTree.mainline.length + techTree.branches.length;
+  const researchedTechs = techTree.mainline.concat(techTree.branches).filter(node => isTechUnlocked(node.id)).length;
+  const techCount = query('#tech-tree-count');
+  if (techCount) techCount.textContent = `${researchedTechs} / ${totalTechs}`;
   all('[data-matrix]').forEach(item => {
     const resource = item.dataset.matrix;
     item.classList.toggle('matrix-active', tech?.cube === resource);

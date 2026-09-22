@@ -60,9 +60,13 @@ const assetPaths = {
   processor: 'godot_game/assets/generated/resource-processor-chip-v01.png',
   titanium: 'godot_game/assets/generated/resource-titanium-crystal-v01.png',
   electromagneticCube: 'godot_game/assets/generated/resource_matrix_v02.png',
+  energyCube: 'godot_game/assets/generated/resource_matrix_v02.png',
+  structureCube: 'godot_game/assets/generated/resource_matrix_v02.png',
+  informationCube: 'godot_game/assets/generated/resource_matrix_v02.png',
   miner: 'godot_game/assets/generated/building-mining-drill-v01.png',
   smelter: 'godot_game/assets/generated/building-smelter-v01.png',
   assembler: 'godot_game/assets/generated/building-assembler-v01.png',
+  workbench: 'godot_game/assets/generated/building_workbench_north.png',
   researchLab: 'godot_game/assets/generated/building_research-lab_north.png',
   sorter: 'godot_game/assets/generated/building_sorter_north.png',
   wind: 'godot_game/assets/generated/building_wind-generator_north.png',
@@ -78,6 +82,10 @@ const assetPaths = {
   solidStorage: 'godot_game/assets/generated/building_solid-storage_v01.svg',
   liquidStorage: 'godot_game/assets/generated/building_liquid-storage_v01.svg',
   gasStorage: 'godot_game/assets/generated/building_gas-storage_v01.svg',
+  logisticsStation: 'godot_game/assets/generated/building-energy-core-v01.png',
+  stellarReceiver: 'godot_game/assets/generated/building-energy-core-v01.png',
+  solarSailLauncher: 'godot_game/assets/generated/building-energy-core-v01.png',
+  structureLauncher: 'godot_game/assets/generated/building-energy-core-v01.png',
   groundTile: 'godot_game/assets/generated/godot-v02-ground-tile.png',
   rockTile: 'godot_game/assets/generated/godot-v02-ground-tile.png',
   waterTile: 'godot_game/assets/generated/terrain_water_tile_v01.png',
@@ -225,9 +233,9 @@ const buildings = {
   // The first sorter is part of the foundation loop. Smart sorting later
   // upgrades the same physical interface with rules and multiple exits.
   sorter: { label: '分拣器', size: 1, color: '#69d8da', power: .1, cost: { iron: 4, copper: 2 }, tech: 'foundation', image: 'sorter' },
-  workbench: { label: '工作台', size: 2, color: '#e8a46e', power: .5, cost: { iron: 12, copper: 4 }, tech: 'workbench-tech' },
-  wind: { label: '风力发电机', size: 2, color: '#a8e7dd', power: 0, generation: 2.6, cost: { iron: 10, copper: 6 }, tech: 'foundation' },
-  thermal: { label: '火力发电机', size: 2, color: '#ee765c', power: .2, generation: 6, cost: { iron: 18, copper: 10 }, tech: 'thermal-power' },
+  workbench: { label: '工作台', size: 2, color: '#e8a46e', power: .5, cost: { iron: 12, copper: 4 }, tech: 'workbench-tech', image: 'workbench' },
+  wind: { label: '风力发电机', size: 2, color: '#a8e7dd', power: 0, generation: 2.6, cost: { iron: 10, copper: 6 }, tech: 'foundation', image: 'wind' },
+  thermal: { label: '火力发电机', size: 2, color: '#ee765c', power: .2, generation: 6, cost: { iron: 18, copper: 10 }, tech: 'thermal-power', image: 'thermal' },
   gasTurbine: { label: '燃气轮机', size: 2, color: '#b6e7ba', power: .5, generation: 9, cost: { iron: 22, copper: 8, processor: 2 }, tech: 'gas-power', image: 'gasTurbine' },
   longPowerTower: { label: '远距离电力塔', size: 1, color: '#8ccfff', power: .14, transmissionRange: 9, cost: { iron: 12, copper: 6, processor: 1 }, tech: 'power-transmission', image: 'longPowerTower' },
   ultraPowerTower: { label: '超远距离电力塔', size: 2, color: '#c58cff', power: .24, transmissionRange: 15, cost: { iron: 24, copper: 12, processor: 3 }, tech: 'advanced-power-grid', image: 'ultraPowerTower' },
@@ -238,10 +246,10 @@ const buildings = {
   solidStorage: { label: '固体仓储', size: 2, color: '#a7c7ff', power: .15, cost: { iron: 16, copper: 4 }, tech: 'foundation', image: 'solidStorage', storageForm: 'solid' },
   liquidStorage: { label: '液体仓储', size: 2, color: '#5cc8ed', power: .2, cost: { iron: 18, copper: 4 }, tech: 'fluid-storage', image: 'liquidStorage', storageForm: 'liquid' },
   gasStorage: { label: '气体仓储', size: 2, color: '#b6e7ba', power: .22, cost: { iron: 20, copper: 6, processor: 1 }, tech: 'gas-storage', image: 'gasStorage', storageForm: 'gas' },
-  logisticsStation: { label: '行星物流站', size: 3, color: '#c58cff', power: 2.8, cost: { iron: 32, processor: 6, titanium: 4 }, tech: 'interstellar-logistics' },
-  stellarReceiver: { label: '恒星能量接收器', size: 2, color: '#f5e29b', power: .6, generation: 10, cost: { iron: 28, processor: 4, orbitNode: 2 }, tech: 'dyson-frame' },
-  solarSailLauncher: { label: '太阳帆发射台', size: 3, color: '#f7e69c', power: 3.8, cost: { iron: 30, processor: 4, structureCube: 4 }, tech: 'orbital-construction' },
-  structureLauncher: { label: '结构火箭发射台', size: 3, color: '#ffb879', power: 4.8, cost: { iron: 36, processor: 6, titanium: 4, structureCube: 4 }, tech: 'orbital-construction' }
+  logisticsStation: { label: '行星物流站', size: 3, color: '#c58cff', power: 2.8, cost: { iron: 32, processor: 6, titanium: 4 }, tech: 'interstellar-logistics', image: 'logisticsStation' },
+  stellarReceiver: { label: '恒星能量接收器', size: 2, color: '#f5e29b', power: .6, generation: 10, cost: { iron: 28, processor: 4, orbitNode: 2 }, tech: 'dyson-frame', image: 'stellarReceiver' },
+  solarSailLauncher: { label: '太阳帆发射台', size: 3, color: '#f7e69c', power: 3.8, cost: { iron: 30, processor: 4, structureCube: 4 }, tech: 'orbital-construction', image: 'solarSailLauncher' },
+  structureLauncher: { label: '结构火箭发射台', size: 3, color: '#ffb879', power: 4.8, cost: { iron: 36, processor: 6, titanium: 4, structureCube: 4 }, tech: 'orbital-construction', image: 'structureLauncher' }
 };
 
 const cubeRecipes = {
@@ -307,6 +315,52 @@ const techTree = {
 const foundationTech = { id: 'foundation', label: '基础工业授权', short: '初始权限', description: '授予着陆舱周边的第一套工业设施许可证。着陆后没有现成电力，必须先部署风力发电机，再让电塔把早期产线接入电网。', requires: [], cube: 'electromagneticCube', cost: 0, unlocks: ['miner', 'smelter', 'waterPump', 'researchLab', 'storage', 'solidStorage', 'sorter', 'powerTower', 'wind'], effectText: '解锁采矿机、水泵、冶炼机、科研站、固体仓储、基础分拣器、电力塔与风力发电机' };
 const techNodes = [foundationTech, ...techTree.mainline, ...techTree.branches];
 const techById = Object.fromEntries(techNodes.map(tech => [tech.id, tech]));
+const techCategoryMeta = {
+  all: { label: '总览', short: '全部路线', note: '所有研究路线与跨分类依赖' },
+  mainline: { label: '主线', short: '恒星工程', note: '从落地授权走向戴森框架' },
+  logistics: { label: '物流', short: '运输与仓储', note: '传送、分拣、仓储与星际物流' },
+  energy: { label: '能源', short: '发电与电网', note: '发电、输电与流体能源' },
+  industry: { label: '工业', short: '采集与制造', note: '采掘、冶炼、组装与材料' },
+  stellar: { label: '恒星工程', short: '轨道与巨构', note: '组件制造、发射与轨道施工' }
+};
+const techCategoryOrder = ['mainline', 'logistics', 'energy', 'industry', 'stellar'];
+const techCategoryById = {
+  'planetary-logistics': 'mainline',
+  'automated-smelting': 'mainline',
+  'matrix-lab': 'mainline',
+  'interstellar-logistics': 'mainline',
+  'stellar-network': 'mainline',
+  'dyson-frame': 'mainline',
+  'sorter-tech': 'logistics',
+  'belt-mk2': 'logistics',
+  'storage-mk2': 'logistics',
+  'fluid-storage': 'logistics',
+  'gas-storage': 'logistics',
+  'logistics-mk3': 'logistics',
+  'logistics-mk4': 'logistics',
+  'logistics-mk5': 'logistics',
+  'wind-power': 'energy',
+  'thermal-power': 'energy',
+  'power-transmission': 'energy',
+  'power-grid-mk2': 'energy',
+  'advanced-power-grid': 'energy',
+  'oil-processing': 'energy',
+  'oil-extractor-mk2': 'energy',
+  'gas-extraction': 'energy',
+  'gas-power': 'energy',
+  'workbench-tech': 'industry',
+  'advanced-assembly': 'industry',
+  'advanced-materials': 'industry',
+  'mining-mk2': 'industry',
+  'industrial-mk3': 'industry',
+  'industrial-mk4': 'industry',
+  'industrial-mk5': 'industry',
+  'stellar-fabrication': 'stellar',
+  'orbital-construction': 'stellar'
+};
+function techCategoryFor(id) {
+  return techCategoryById[id] || (id === 'foundation' ? 'mainline' : 'industry');
+}
 const startingTech = ['foundation'];
 const startingInventory = { iron: 72, copper: 28, silicon: 16, coal: 4, crudeOil: 0, water: 0, naturalGas: 0, titanium: 0, ironIngot: 4, copperIngot: 4, siliconWafer: 4, processor: 6, electromagneticCube: 0, energyCube: 0, structureCube: 0, informationCube: 0, stellarFrame: 0, gear: 0, magneticCoil: 0, circuitBoard: 0, glass: 0, motor: 0, turbine: 0, particleContainer: 0, solarSail: 0, structureRocket: 0, orbitNode: 0 };
 const startingStorageStock = { iron: 96, copper: 48, silicon: 32, coal: 8, titanium: 0, ironIngot: 4, copperIngot: 6, siliconWafer: 6, processor: 8, electromagneticCube: 0, energyCube: 0, structureCube: 0, informationCube: 0, stellarFrame: 0, gear: 0, magneticCoil: 0, circuitBoard: 0, glass: 0, motor: 0, turbine: 0, particleContainer: 0, solarSail: 0, structureRocket: 0, orbitNode: 0 };

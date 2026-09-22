@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#07111d" />
     <title>星环回声 · 行星工厂</title>
-  <link rel="stylesheet" href="game.css?v=20260921-01" />
+  <link rel="stylesheet" href="game.css?v=20260923-02" />
   <link rel="stylesheet" href="ui-redesign.css?v=20260922-01" />
   <link rel="icon" href="data:," />
   </head>
@@ -148,9 +148,9 @@
           <button class="tool-button advanced-tool" data-tool="wind" data-dock-category="power" title="不消耗燃料，把风场转成基础电力"><span class="tool-key">G</span><span class="tool-icon image-tool" data-fallback="△"><img src="godot_game/assets/generated/building_wind-generator_north.png" alt="" /></span><span><b>风力发电机</b><small>库存</small></span></button>
           <button class="tool-button advanced-tool" data-tool="thermal" data-dock-category="power" data-tech-lock="thermal-power" title="消耗煤炭，把化学能转成电力"><span class="tool-key">H</span><span class="tool-icon image-tool" data-fallback="♨"><img src="godot_game/assets/generated/building_thermal-generator_north.png" alt="" /></span><span><b>火力发电机</b><small>库存</small></span></button>
           <button class="tool-button advanced-tool" data-tool="gasTurbine" data-dock-category="power" data-tech-lock="gas-power" title="消耗天然气，输出稳定电力"><span class="tool-key">J</span><span class="tool-icon image-tool" data-fallback="♨"><img src="godot_game/assets/generated/building_gas-turbine_v01.svg" alt="" /></span><span><b>燃气轮机</b><small>库存</small></span></button>
-          <button class="tool-button advanced-tool stellar-receiver-tool" data-tool="stellarReceiver" data-dock-category="power" data-tech-lock="dyson-frame" title="戴森框架完成后收集恒星能量"><span class="tool-key">K</span><span class="tool-icon" aria-hidden="true">✦</span><span><b>恒星接收器</b><small>库存</small></span></button>
-          <button class="tool-button advanced-tool" data-tool="solarSailLauncher" data-dock-category="power" data-tech-lock="orbital-construction" title="消耗太阳帆并发射到恒星轨道"><span class="tool-key">L</span><span class="tool-icon" aria-hidden="true">◌</span><span><b>太阳帆发射台</b><small>库存</small></span></button>
-          <button class="tool-button advanced-tool" data-tool="structureLauncher" data-dock-category="power" data-tech-lock="orbital-construction" title="消耗结构火箭并发射到恒星轨道"><span class="tool-key">O</span><span class="tool-icon" aria-hidden="true">△</span><span><b>结构火箭发射台</b><small>库存</small></span></button>
+          <button class="tool-button advanced-tool stellar-receiver-tool" data-tool="stellarReceiver" data-dock-category="power" data-tech-lock="dyson-frame" title="戴森框架完成后收集恒星能量"><span class="tool-key">K</span><span class="tool-icon image-tool" data-fallback="✦" aria-hidden="true"><img src="godot_game/assets/generated/building-energy-core-v01.png" alt="" /></span><span><b>恒星接收器</b><small>库存</small></span></button>
+          <button class="tool-button advanced-tool" data-tool="solarSailLauncher" data-dock-category="power" data-tech-lock="orbital-construction" title="消耗太阳帆并发射到恒星轨道"><span class="tool-key">L</span><span class="tool-icon image-tool" data-fallback="◌" aria-hidden="true"><img src="godot_game/assets/generated/building-energy-core-v01.png" alt="" /></span><span><b>太阳帆发射台</b><small>库存</small></span></button>
+          <button class="tool-button advanced-tool" data-tool="structureLauncher" data-dock-category="power" data-tech-lock="orbital-construction" title="消耗结构火箭并发射到恒星轨道"><span class="tool-key">O</span><span class="tool-icon image-tool" data-fallback="△" aria-hidden="true"><img src="godot_game/assets/generated/building-energy-core-v01.png" alt="" /></span><span><b>结构火箭发射台</b><small>库存</small></span></button>
           <button class="tool-button advanced-tool" data-tool="powerTower" data-dock-category="power" title="以电塔为圆心形成圆形供电覆盖"><span class="tool-key">7</span><span class="tool-icon image-tool power-tower-icon" data-fallback="⌁"><img src="godot_game/assets/generated/building_power-tower_v01.svg" alt="" /></span><span><b>电力塔</b><small>库存</small></span></button>
           <button class="tool-button advanced-tool" data-tool="longPowerTower" data-dock-category="power" data-tech-lock="power-transmission" title="需要远距输电"><span class="tool-key">8</span><span class="tool-icon image-tool long-power-tower-icon" data-fallback="⌁"><img src="godot_game/assets/generated/building_long-power-tower_v01.svg" alt="" /></span><span><b>远距离电力塔</b><small>库存</small></span></button>
           <button class="tool-button advanced-tool" data-tool="ultraPowerTower" data-dock-category="power" data-tech-lock="advanced-power-grid" title="需要超远距骨干网"><span class="tool-key">9</span><span class="tool-icon image-tool ultra-power-tower-icon" data-fallback="⌁"><img src="godot_game/assets/generated/building_ultra-power-tower_v01.svg" alt="" /></span><span><b>超远距离电力塔</b><small>库存</small></span></button>
@@ -184,19 +184,18 @@
 
         <section class="matrix-stock" id="matrix-stock" aria-label="科研矩阵库存">
           <div class="matrix-stock-item" data-matrix="electromagneticCube"><span class="matrix-icon matrix-cyan matrix-electromagnetic" aria-hidden="true"><img src="godot_game/assets/generated/resource_matrix_v02.png" alt="" /></span><span><small>电磁矩阵</small><b id="matrix-electromagneticCube">0</b></span></div>
-          <div class="matrix-stock-item" data-matrix="energyCube"><span class="matrix-icon matrix-amber matrix-energy" aria-hidden="true"></span><span><small>能量矩阵</small><b id="matrix-energyCube">0</b></span></div>
-          <div class="matrix-stock-item" data-matrix="structureCube"><span class="matrix-icon matrix-pink matrix-structure" aria-hidden="true"></span><span><small>结构矩阵</small><b id="matrix-structureCube">0</b></span></div>
-          <div class="matrix-stock-item" data-matrix="informationCube"><span class="matrix-icon matrix-blue matrix-information" aria-hidden="true"></span><span><small>信息矩阵</small><b id="matrix-informationCube">0</b></span></div>
+          <div class="matrix-stock-item" data-matrix="energyCube"><span class="matrix-icon matrix-amber matrix-energy" aria-hidden="true"><img src="godot_game/assets/generated/resource_matrix_v02.png" alt="" /></span><span><small>能量矩阵</small><b id="matrix-energyCube">0</b></span></div>
+          <div class="matrix-stock-item" data-matrix="structureCube"><span class="matrix-icon matrix-pink matrix-structure" aria-hidden="true"><img src="godot_game/assets/generated/resource_matrix_v02.png" alt="" /></span><span><small>结构矩阵</small><b id="matrix-structureCube">0</b></span></div>
+          <div class="matrix-stock-item" data-matrix="informationCube"><span class="matrix-icon matrix-blue matrix-information" aria-hidden="true"><img src="godot_game/assets/generated/resource_matrix_v02.png" alt="" /></span><span><small>信息矩阵</small><b id="matrix-informationCube">0</b></span></div>
         </section>
 
-        <section class="tech-section">
-          <div class="tech-section-heading"><div><span class="eyebrow">主线科技</span><h3>恒星工程主线</h3></div><span class="section-count" id="mainline-count">0 / 6</span></div>
-          <div class="tech-track" id="mainline-tech"></div>
-        </section>
-
-        <section class="tech-section branch-section">
-          <div class="tech-section-heading"><div><span class="eyebrow">技术分支</span><h3>技术分支</h3></div><span class="section-count" id="branch-count">0 / 10</span></div>
-          <div class="branch-grid" id="branch-tech"></div>
+        <section class="tech-tree-section" aria-label="科技树">
+          <div class="tech-tree-toolbar">
+            <div><span class="eyebrow">发展路径</span><h3>科技树</h3><p id="tech-tree-meta">按类别查看研究前后关系</p></div>
+            <span class="section-count" id="tech-tree-count">0 / 0</span>
+          </div>
+          <div class="tech-category-tabs" id="tech-category-tabs" role="tablist" aria-label="科技类别"></div>
+          <div class="tech-tree" id="tech-tree"></div>
         </section>
       </aside>
 
@@ -248,11 +247,11 @@
       <div class="game-toast" id="game-toast"><span class="toast-dot"></span><span id="toast-message">准备开始建造</span></div>
       <div class="paused-overlay" id="paused-overlay" hidden><strong>模拟已暂停</strong><span>按 Space 继续</span></div>
     </div>
-    <script src="game.core.js?v=20260923-01"></script>
-    <script src="game.world.js?v=20260923-01"></script>
-    <script src="game.sim.js?v=20260923-01"></script>
-    <script src="game.ui.js?v=20260923-01"></script>
-    <script src="game.tools.js?v=20260923-01"></script>
-    <script src="game.main.js?v=20260923-01"></script>
+    <script src="game.core.js?v=20260923-02"></script>
+    <script src="game.world.js?v=20260923-02"></script>
+    <script src="game.sim.js?v=20260923-02"></script>
+    <script src="game.ui.js?v=20260923-02"></script>
+    <script src="game.tools.js?v=20260923-02"></script>
+    <script src="game.main.js?v=20260923-02"></script>
   </body>
 </html>
