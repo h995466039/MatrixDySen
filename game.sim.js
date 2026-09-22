@@ -184,15 +184,6 @@ function labProductionCube(building) {
   return targetCube;
 }
 
-function assemblyRecipeFor(building) {
-  const recipeId = assemblyRecipes[building?.recipeId] ? building.recipeId : 'processor';
-  const recipe = assemblyRecipes[recipeId] || assemblyRecipes.processor;
-  return {
-    ...recipe,
-    time: getAssemblyTime(building) * (recipe.time / assemblyRecipes.processor.time)
-  };
-}
-
 function stellarComponentsReady() {
   const components = state.stellarProject?.components || [];
   return components.length > 0

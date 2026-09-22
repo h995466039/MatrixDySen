@@ -510,7 +510,8 @@ function makeStellarProject(savedState = null) {
       maxLifetime: Math.max(1, Number(component.maxLifetime) || (ORBIT_COMPONENT_LIFETIME[component.type] || 240))
     }))
     : [];
-  // 旧档只有模块计数：按节点组件迁移，保证老存档的接收器仍可供电。
+  // 旧档只有模块计数：迁移节点组件，并为完成框架的旧档补发一套帆/火箭，
+  // 保证老存档的恒星接收器仍可供电（新档仍需发射台部署帆/火箭）。
   if (!components.length && legacyModules > 0) {
     const migrated = Math.min(legacyModules, 20);
     for (let index = 0; index < migrated; index += 1) {
@@ -519,6 +520,20 @@ function makeStellarProject(savedState = null) {
         type: 'node',
         remaining: ORBIT_COMPONENT_LIFETIME.node,
         maxLifetime: ORBIT_COMPONENT_LIFETIME.node
+      });
+    }
+    if (migrated >= 20) {
+      components.push({
+        id: 'orbit-sail-legacy-0',
+        type: 'sail',
+        remaining: ORBIT_COMPONENT_LIFETIME.sail,
+        maxLifetime: ORBIT_COMPONENT_LIFETIME.sail
+      });
+      components.push({
+        id: 'orbit-rocket-legacy-0',
+        type: 'rocket',
+        remaining: ORBIT_COMPONENT_LIFETIME.rocket,
+        maxLifetime: ORBIT_COMPONENT_LIFETIME.rocket
       });
     }
   }
