@@ -302,6 +302,12 @@ canvas.addEventListener('pointerup', event => {
   state.pointer.startBuildingId = null;
 });
 canvas.addEventListener('pointerleave', () => { if (!state.pointer.down) state.pointer.cell = null; });
+canvas.addEventListener('pointercancel', () => {
+  // 触摸/系统打断拖拽：清掉未结算的框选与移动预览，避免下次点击误判
+  state.selectionRect = null;
+  state.movePreview = null;
+  state.pointer.down = false;
+});
 window.addEventListener('pointerup', () => {
   // 兜底：在画布外释放指针时（拖拽/平移越过画布边缘、释放到面板上），避免状态残留
   state.pointer.down = false;
@@ -309,6 +315,8 @@ window.addEventListener('pointerup', () => {
   state.pointer.startCell = null;
   state.pointer.startBuildingId = null;
   state.pointer.sorterAnchor = null;
+  state.selectionRect = null;
+  state.movePreview = null;
   if (state.pointer.demolishActive) {
     state.pointer.demolishActive = false;
     const total = state.pointer.demolishCount || 0;

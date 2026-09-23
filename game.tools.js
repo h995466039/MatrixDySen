@@ -63,7 +63,11 @@ function selectTool(tool) {
   state.tool = tool;
   setDockCategory(dockCategoryForTool(tool));
   state.selectedId = null;
+  state.selectedIds = [];
   state.selectedBeltId = null;
+  state.pasteMode = null;
+  state.selectionRect = null;
+  state.movePreview = null;
   state.pointer.cell = null;
   state.pointer.startCell = null;
   state.pointer.startBuildingId = null;
@@ -735,6 +739,10 @@ function runQaPlaythrough() {
   const qaCountBeforeFail = state.buildings.length;
   const qaFailResult = pasteClipboard({ x: -22, y: -20 });
   check(!qaFailResult && state.buildings.length === qaCountBeforeFail, '非法位置粘贴没有整组回滚');
+  state.kits.wind = 1;
+  const qaCountBeforeKit = state.buildings.length;
+  const qaKitResult = pasteClipboard({ x: 24, y: 12 });
+  check(!qaKitResult && state.buildings.length === qaCountBeforeKit && (state.kits.wind || 0) === 1, '套件不足粘贴未整组回滚或丢失套件');
   state.buildings = state.buildings.filter(building => !qaSelBuildings.includes(building) && !qaPasted.includes(building));
   state.kits.wind = qaWindKitsBefore;
   state.selectedIds = [];

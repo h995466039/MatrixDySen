@@ -265,6 +265,7 @@ function verifyMoveTarget(building, toCell, groupIds) {
   if (footprintBeltAt(toCell, meta.size)) return { valid: false, reason: '压到传送带' };
   const blocked = footprint.find(entry => isTerrainBlocked(entry));
   if (blocked) return { valid: false, reason: '地形不可建造' };
+  if (resourceNodeCollisionAt(toCell, meta.size)) return { valid: false, reason: '压住矿脉核心格' };
   return { valid: true };
 }
 
@@ -310,9 +311,14 @@ function togglePasteMode() {
 function pasteValidation(cell) {
   const clipboard = state.clipboard;
   if (!clipboard?.length) return { valid: false, reason: '剪贴板为空' };
+  const kitNeed = {};
   for (const entry of clipboard) {
     const check = placementCheck(entry.type, { x: cell.x + entry.dx, y: cell.y + entry.dy });
     if (!check.valid) return { valid: false, reason: check.reason };
+    kitNeed[entry.type] = (kitNeed[entry.type] || 0) + 1;
+  }
+  for (const [type, need] of Object.entries(kitNeed)) {
+    if (kitCount(type) < need) return { valid: false, reason: `${buildings[type].label}库存不足 · 需要 ${need} 个套件` };
   }
   return { valid: true };
 }
