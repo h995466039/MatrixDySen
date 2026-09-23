@@ -574,6 +574,14 @@ function runQaPlaythrough() {
   researchQaTech('stellar-network');
   researchQaTech('logistics-mk5');
   check(getBuildingLevel('belt') === 5 && storageCapacity(storage) === 1400, '物流 Mk-V 没有达到五级速度与容量');
+  // —— Sprint 18：航线容量/时长科技化 + 行星设施计数 ——
+  const qaCargoProcessor = cargoOptions().find(option => option.resource === 'processor');
+  check(qaCargoProcessor.amount === Math.round(2 * (1 + (getBuildingLevel('belt') - 1) * .25)) && qaCargoProcessor.amount > 2, '货运舱容量未随物流等级提升');
+  check(effectiveTravelTime(planetById.forge) < 12, '物流等级未缩短航线时间');
+  check(planetFactoryCount('forge') === 0, '熔火-β 未建厂时设施数应为 0');
+  state.planetSnapshots.forge.buildings.push(makeBuilding('smelter', 5, 5));
+  check(planetFactoryCount('forge') === 1, '熔火-β 建厂后设施数未计入');
+  state.planetSnapshots.forge.buildings.pop();
   researchQaTech('industrial-mk3');
   researchQaTech('industrial-mk4');
   researchQaTech('industrial-mk5');

@@ -1274,7 +1274,13 @@ function switchActivePlanet(planetId) {
   if (mapPanel) mapPanel.hidden = true;
   updateHUD();
   render();
-  showToast(`已进入${target.name} · 本地工厂已载入`);
+  if (planetId === 'home') {
+    showToast('已返回母星 · 主工厂已载入');
+  } else if (planetFactoryCount(planetId) === 0) {
+    showToast(`已降落${target.name} · 先部署风力发电机，再在矿脉旁建冶炼/装配产线`);
+  } else {
+    showToast(`已进入${target.name} · 本地工厂已载入 · ${planetFactoryCount(planetId)} 座设施`);
+  }
   return true;
 }
 
@@ -1289,11 +1295,25 @@ function addFlightLog(message) {
 }
 
 function cargoOptions() {
+  const level = clamp(getBuildingLevel('belt'), 1, 5);
+  const scale = base => Math.round(base * (1 + (level - 1) * .25));
   return [
-    { resource: 'processor', amount: 2, note: '稳定货物' },
-    { resource: 'electromagneticCube', amount: 4, note: '科研样本' },
-    { resource: 'energyCube', amount: 3, note: '高能样本' }
+    { resource: 'processor', amount: scale(2), note: `稳定货物 · 物流 MK-${level}` },
+    { resource: 'electromagneticCube', amount: scale(4), note: `科研样本 · 物流 MK-${level}` },
+    { resource: 'energyCube', amount: scale(3), note: `高能样本 · 物流 MK-${level}` }
   ];
+}
+
+function effectiveTravelTime(target) {
+  const level = clamp(getBuildingLevel('belt'), 1, 5);
+  const base = Math.max(target.travelTime || 12, 8);
+  return Math.max(4, Math.round(base * (1 - (level - 1) * .06) * 10) / 10);
+}
+
+function planetFactoryCount(planetId) {
+  const snapshot = state.planetSnapshots?.[planetId];
+  if (!snapshot || !Array.isArray(snapshot.buildings)) return 0;
+  return snapshot.buildings.filter(building => !building.baseHub).length;
 }
 
 function launchRoute() {
@@ -1320,7 +1340,7 @@ function simulateInterstellar(dt) {
   const route = state.interstellar.route;
   const target = routeTarget();
   if (!route || !target) return;
-  route.progress += dt / Math.max(target.travelTime || 12, 8);
+  route.progress += dt / effectiveTravelTime(target);
   if (route.progress < 1) return;
   if (route.phase === 'outbound') {
     route.phase = 'returning';

@@ -101,13 +101,17 @@ function updateStarMapUI() {
     button.classList.toggle('visited', Boolean(state.interstellar.visits[planet.id]));
     button.classList.toggle('current-planet', planet.id === activePlanet.id);
     const markerMeta = button.querySelector('small');
-    if (markerMeta) markerMeta.textContent = locked
-      ? '信标未接入'
-      : planet.id === activePlanet.id
-        ? '当前工厂'
-        : state.interstellar.visits[planet.id]
-          ? `${planet.role} · ${state.interstellar.visits[planet.id]} 航次`
-          : planet.role;
+    if (markerMeta) {
+      const factories = planetFactoryCount(planet.id);
+      const factoryText = factories > 0 ? ` · ${factories} 座设施` : '';
+      markerMeta.textContent = locked
+        ? '信标未接入'
+        : planet.id === activePlanet.id
+          ? `当前工厂${factoryText}`
+          : state.interstellar.visits[planet.id]
+            ? `${planet.role} · ${state.interstellar.visits[planet.id]} 航次${factoryText}`
+            : planet.role;
+    }
   });
   query('#map-button-state').textContent = route ? '航线中' : unlocked ? '已接入' : '未接入';
   const worldName = query('#world-name');
@@ -128,7 +132,7 @@ function updateStarMapUI() {
     routeTitle.textContent = `${activeTarget.name} · ${resources[route.cargo].label} ×${route.amount}`;
     routeStatus.textContent = route.phase === 'outbound' ? '货运舱正在前往目标星球' : '已抵达目标星球，正在返航';
     routePhase.textContent = route.phase === 'outbound' ? '去程' : '返航';
-    routeTime.textContent = `${Math.ceil((1 - route.progress) * activeTarget.travelTime)} 秒`;
+    routeTime.textContent = `${Math.ceil((1 - route.progress) * effectiveTravelTime(activeTarget))} 秒`;
     routeFill.style.width = `${percent}%`;
   } else if (!unlocked) {
     routeTitle.textContent = '星图接入受限';
