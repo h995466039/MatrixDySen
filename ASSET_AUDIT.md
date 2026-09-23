@@ -2,19 +2,19 @@
 
 审计时间：2026-09-20
 
-审计范围：浏览器入口 `index.html`、运行时脚本 `game.js`、样式 `game.css`，以及 `output/imagegen/` 和 `godot_game/assets/generated/`。
+审计范围：浏览器入口 `index.html`、运行时脚本 `game.core.js` / `game.world.js` / `game.ui.js`、样式 `game.css`，以及 `output/imagegen/` 和 `godot_game/assets/generated/`。
 
 ## 结论
 
 - 浏览器原先声明了 26 个图片资源：16 个存在，10 个缺失；本轮已将其中 6 个映射到 Godot 已生成的透明贴图，并移除 4 个仍无成品的 HTML 破图引用。2026-09-22 的 UI 重构又把分拣器、风力发电机、火力发电机、科研站和工作台的现有贴图接入建造目录。
-- 浏览器现在使用 `godot-v02-ground-tile.png` 作为连续平原/岩场地表材质、`terrain_water_tile_v01.png` 作为水域材质，并用 `industrial_floor_tile_v02.png` 作为建造目录和工作台的低对比度工业面板纹理；网格、星点和戴森施工轨道仍由 Canvas 程序绘制。
+- 浏览器现在使用 `godot-v02-ground-tile.png` 作为连续平原/岩场地表材质、`terrain_water_tile_v01.png` 作为水域材质；Atlas 主界面和星图工作区分别使用 `ui-bg-console-main-v01.png` 与 `ui-bg-console-starmap-v01.png`，网格、星点和戴森施工轨道仍由 Canvas 程序绘制。
 - `output/imagegen/` 有 42 个 PNG，其中 16 个已经用于浏览器，26 个没有被浏览器使用。
 - Godot 目录有 59 个运行时素材：47 个 PNG、12 个 SVG。它们是另一套贴图管线，不会自动被浏览器使用。
 - `output/` 被 `.gitignore` 忽略，当前生成素材不在 Git 跟踪范围内；全新 checkout 不能复现完整视觉资源。
 
 ## 浏览器素材
 
-引用入口：[game.js](game.js:13)、[index.html](index.html:29)、[game.css](game.css:227)。
+引用入口：[game.core.js](game.core.js:70)、[index.html](index.html:8)、[game.css](game.css:44)。
 
 ### 已应用
 
@@ -34,7 +34,8 @@
 | 资源 | `resource-*-v01.png` | 铁、铜、硅、冰、铜锭、硅片、处理器、钛 |
 | 角色 | `character-logistics-director-v01.png` | 顶部职业入口、物流主管 |
 | 角色 | `character-production-engineer-v01.png` | 能源工程师、科研先驱职业卡 |
-| 背景 | `stellar-ring-concept-v01.png` | 星图背景，CSS 透明叠加 |
+| 背景 | `ui-bg-console-main-v01.png` | 主界面与加载背景 |
+| 背景 | `ui-bg-console-starmap-v01.png` | 星图工作区背景 |
 | 瓦片 | `godot-v02-ground-tile.png` | Canvas 平原与岩场地表材质，按世界坐标连续采样 |
 | 瓦片 | `terrain_water_tile_v01.png` | Canvas 水域波纹材质 |
 | 矩阵 | `resource_matrix_v02.png` | 电磁矩阵库存图标 |
@@ -68,7 +69,7 @@
 
 ## 未应用到浏览器的生成图
 
-这些文件存在于 `output/imagegen/`，但没有被 `index.html`、`game.js` 或 `game.css` 使用。
+这些文件存在于 `output/imagegen/`，但没有被 `index.html`、运行时脚本或 `game.css` 使用。
 
 ### Godot v02 中间稿：13 个
 
@@ -109,7 +110,7 @@
 
 ### 浏览器面板纹理
 
-- `godot_game/assets/generated/industrial_floor_tile_v02.png`：用于 `ui-redesign.css` 的建造目录、科技、制造和星图工作台背景；没有被误当作能源核心建筑。
+- `godot_game/assets/generated/industrial_floor_tile_v02.png`：旧版工作台纹理，目前不再由浏览器 CSS 引用；没有被误当作能源核心建筑。
 
 ## Godot 贴图管线
 
@@ -137,10 +138,10 @@ Godot 代码会拼接 `building_miner_north.png` 等路径，但目录实际提�
 
 ### 浏览器
 
-浏览器在 [game.js](game.js:470) 中叠加 `ground_tile_v02.png` 地表材质；网格线、星点和传送带主体仍由 Canvas 程序绘制。因此：
+浏览器在 [game.world.js](game.world.js:146) 中叠加 `ground_tile_v02.png` 地表材质；网格线、星点和传送带主体仍由 Canvas 程序绘制。因此：
 
 - 平原、岩场和水域材质贴图已经接入浏览器，地表按世界坐标连续采样，不再只依赖程序色块。
-- `industrial_floor_tile_v02.png` 已应用在 HTML 工作台和建造目录，未用于 Canvas 行星地表，避免把自然地表误做成整片工业平台。
+- `ui-bg-console-main-v01.png` 只用于控制台气氛层，未用于 Canvas 行星地表；这样不会把自然地表误做成整片工业平台。
 - 传送带主体由 Canvas 绘制，只有建造栏使用 `building-conveyor-module-v01.png` 图标。
 
 ### Godot
@@ -152,5 +153,5 @@ Godot 已使用 `ground_tile_v02.png`、`industrial_floor_tile_v02.png` 和 `bel
 1. 补齐浏览器缺失的 10 个 v01 资源，优先顺序是科研矩阵、科研站/分拣器、能源设施、货运舱。
 2. 修复 Godot 采矿机命名断裂，并让 `catalog.json` 成为唯一建筑素材目录。
 3. 决定 Godot v02/v03 素材是转成浏览器资源、继续服务 Godot，还是归档；不要让三套命名长期并存。
-4. 如果浏览器要进入更强的视觉版本，再把 `ground_tile` 和 `industrial_floor_tile` 转成可平铺纹理，替换 [drawGround()](game.js:470) 的程序地面。
+4. 如果浏览器要进入更强的视觉版本，再把 `ground_tile` 转成可平铺纹理，替换 [drawGround()](game.world.js:146) 的程序地面。
 5. 将正式发布素材移出 `output/` 或调整 `.gitignore`，确保部署和新 checkout 能拿到资源。

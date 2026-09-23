@@ -2,28 +2,28 @@
 
 ## Direction
 
-深空工业控制台：玩家在夜间的星球指挥舱里管理自动化工厂。界面需要像一台可信的工程设备，二次元角色只承担职业身份和通信情绪，不抢占生产信息。
+Atlas 工业测绘台：玩家在低照度的行星控制舱里管理自动化工厂。界面像可信的工程设备，职业角色只承担身份，不抢占生产信息。
 
 ## Color Strategy
 
 Restrained product palette with three deliberate semantic accents.
 
 ```css
---bg: oklch(0.145 0.035 258);
---surface: oklch(0.205 0.035 258);
---surface-2: oklch(0.245 0.038 258);
---surface-3: oklch(0.285 0.040 258);
---ink: oklch(0.950 0.018 106);
---muted: oklch(0.730 0.030 252);
---primary: oklch(0.760 0.150 108);
---primary-deep: oklch(0.570 0.105 108);
---accent: oklch(0.720 0.180 55);
---info: oklch(0.745 0.105 220);
---danger: oklch(0.690 0.175 28);
---success: oklch(0.740 0.130 150);
+--bg: #0b0e0e;
+--canvas: #131817;
+--plate: #151a18;
+--plate-2: #1d2421;
+--ink: #f2eee1;
+--muted: #b6b8ac;
+--dim: #7c867d;
+--line: #465149;
+--amber: #e2b45c;
+--cyan: #70c6c1;
+--coral: #e57b65;
+--green: #8bc98a;
 ```
 
-Primary is reserved for selection, active career identity, and actionable construction states. Amber is reserved for energy and warnings. Red is reserved for actual failures.
+琥珀表示时间、能源和警告；青绿表示物流与选择；绿色表示正常运行；珊瑚只表示危险或回收动作。
 
 ## Type
 
@@ -37,10 +37,9 @@ Numbers and short labels use the same family with heavier weight and increased t
 
 ## Layout
 
-- 72px top bar.
-- 244px desktop sidebar, collapsing to an icon rail and then a horizontal strip.
-- Main content is a 12-column grid with a large world scene and a right-side inspector.
-- Panels use 8px radius; controls use 6px radius; status pills may be full-pill.
+- 70px top bar.
+- 左侧 258px 任务轨、右侧 288px 遥测/检查器，中间是大地图，底部是建造坞。
+- 面板使用 2px 以内的轻微圆角和不透明背景，避免浮层嵌套与玻璃拟态。
 - Primary interaction remains visible in the world scene; analysis is progressive disclosure through the inspector and dedicated views.
 
 ## Components
@@ -59,6 +58,7 @@ Motion communicates live system state: pulsing network lights, active production
 
 ## Asset Use
 
-- `output/imagegen/stellar-ring-concept-v01.png` is used as the atmospheric world-scene reference.
+- `godot_game/assets/generated/ui-bg-console-main-v01.png` is used for the ground-console atmosphere and loader.
+- `godot_game/assets/generated/ui-bg-console-starmap-v01.png` is used for the dedicated star-map workspace.
 - `output/imagegen/character-production-engineer-v01.png` is used as the production engineer cutout.
 - Text, UI labels, and data are rendered in HTML so they remain editable and crisp.
