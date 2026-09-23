@@ -368,6 +368,7 @@ document.addEventListener('keydown', event => {
   if (event.key.toLowerCase() === 'm' && !event.ctrlKey) toggleStarMap();
   if (event.key.toLowerCase() === 'c' && !event.ctrlKey) toggleCareerPanel();
   if (event.key.toLowerCase() === 'b' && !event.ctrlKey) toggleCraftPanel();
+  if (event.key.toLowerCase() === 'p' && !event.ctrlKey) toggleDebugOverlay();
   if (event.code === 'Space') { event.preventDefault(); togglePause(); }
   if (event.key === '=') stepSimulationSpeed(1);
   if (event.key === '-') stepSimulationSpeed(-1);

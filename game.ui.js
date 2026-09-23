@@ -549,7 +549,57 @@ function render() {
   state.nodes.forEach(drawResourceNodeCore);
   drawBeltPortHints();
   drawItems();
+  drawDebugOverlay();
   drawPreview();
+}
+
+function drawDebugOverlay() {
+  if (!state.debugOverlay) return;
+  // 全部电网连线（不仅限于选中建筑）
+  state.powerGrids.forEach(grid => {
+    const members = new Map(grid.buildings.map(building => [building.id, building]));
+    const color = powerGridColor(grid);
+    ctx.save();
+    ctx.globalAlpha = .5;
+    ctx.lineWidth = Math.max(1, state.zoom);
+    ctx.setLineDash([3, 6]);
+    (grid.links || []).forEach(link => {
+      const left = members.get(link.left);
+      const right = members.get(link.right);
+      if (!left || !right) return;
+      const leftPoint = buildingCenter(left);
+      const rightPoint = buildingCenter(right);
+      const leftScreen = worldToScreen(leftPoint.x, leftPoint.y);
+      const rightScreen = worldToScreen(rightPoint.x, rightPoint.y);
+      ctx.strokeStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(leftScreen.x, leftScreen.y);
+      ctx.lineTo(rightScreen.x, rightScreen.y);
+      ctx.stroke();
+    });
+    ctx.setLineDash([]);
+    ctx.restore();
+  });
+  // 传送带流量标识：速度 + 在途件数
+  state.belts.forEach(belt => {
+    const end = getBeltEnd(belt);
+    const start = worldToScreen(belt.x, belt.y);
+    const finish = worldToScreen(end.x, end.y);
+    const items = state.items.filter(item => item.beltId === belt.id).length;
+    const midX = (start.x + finish.x) / 2;
+    const midY = (start.y + finish.y) / 2;
+    const label = `${getBeltTravelFactor().toFixed(1)} 格/s · ${items} 件`;
+    ctx.save();
+    ctx.globalAlpha = .85;
+    ctx.fillStyle = 'rgba(4,13,22,.85)';
+    ctx.font = '700 9px Bahnschrift, sans-serif';
+    ctx.textAlign = 'center';
+    roundedRect(ctx, midX - 40, midY - 9, 80, 16, 3);
+    ctx.fill();
+    ctx.fillStyle = '#69d8da';
+    ctx.fillText(label, midX, midY + 2);
+    ctx.restore();
+  });
 }
 
 function drawSelectionOverlays() {
@@ -1472,6 +1522,13 @@ function updateHUD() {
     query('#selection-recipe').style.cursor = ['smelter', 'assembler', 'workbench'].includes(selected.type) ? 'pointer' : 'default';
     const selectionProduction = buildingProductionRate(selected.id);
     query('#selection-production').textContent = selectionProduction > 0 ? `≈ ${Math.round(selectionProduction)} 件 / 分` : '近一分钟无产出';
+    const selectionInputFill = query('#selection-input-fill');
+    if (selectionInputFill) selectionInputFill.style.width = `${Math.round(inputReadiness(selected) * 100)}%`;
+    const selectionOutputFill = query('#selection-output-fill');
+    if (selectionOutputFill) {
+      const selectionOutputTotal = Object.values(selected.output || {}).reduce((sum, amount) => sum + amount, 0);
+      selectionOutputFill.style.width = `${Math.round(selectionOutputTotal / Math.max(1, outputCapacity(selected)) * 100)}%`;
+    }
     query('#selection-tech').textContent = isBuildingUnlocked(selected.type) ? `${buildingTechName(selected.type)} · 已授权` : `需完成「${buildingTechName(selected.type)}」`;
     const selectionLevel = isBuildingUnlocked(selected.type) ? `MK-${Math.min(getBuildingLevel(selected.type), 5)}` : '锁定';
     query('#selection-license').textContent = `${selectionLevel} · ${isBuildingUnlocked(selected.type) ? '可运行' : '等待科技'}`;

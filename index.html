@@ -95,6 +95,8 @@
         <div class="selection-line"><span>产出</span><b id="selection-output">0 / min</b></div>
         <div class="selection-line"><span>配方</span><b id="selection-recipe">等待输入</b></div>
         <div class="selection-line"><span>产量</span><b id="selection-production">—</b></div>
+        <div class="selection-barline"><span>输入就绪</span><i class="selection-bar selection-bar-input"><b id="selection-input-fill"></b></i></div>
+        <div class="selection-barline"><span>输出缓存</span><i class="selection-bar selection-bar-output"><b id="selection-output-fill"></b></i></div>
         <div class="selection-line"><span>科技</span><b id="selection-tech">基础工业授权</b></div>
         <div class="selection-line"><span>许可等级</span><b id="selection-license">MK-1 · 可运行</b></div>
         <div class="selection-line"><span>升级</span><b id="selection-upgrade">暂无</b></div>
@@ -245,9 +247,11 @@
         <section class="route-log-section"><div class="tech-section-heading"><div><span class="eyebrow">航线记录</span><h3>航线记录</h3></div><span class="section-count" id="route-log-count">0 条</span></div><div class="route-log" id="route-log"><span class="route-log-empty">暂无航线记录</span></div></section>
       </aside>
 
-      <div class="game-hint"><span>滚轮缩放</span><span>右键拖动镜头</span><span>Shift 框选移动</span><span>Ctrl+C/V 复制粘贴</span><span>= / - 调速</span><span>R 旋转</span><span>ESC 取消</span></div>
+      <div class="game-hint"><span>滚轮缩放</span><span>右键拖动镜头</span><span>Shift 框选移动</span><span>Ctrl+C/V 复制粘贴</span><span>P 调试叠层</span><span>= / - 调速</span><span>ESC 取消</span></div>
+      <div class="dock-tooltip" id="dock-tooltip" hidden></div>
       <div class="game-toast" id="game-toast"><span class="toast-dot"></span><span id="toast-message">准备开始建造</span></div>
       <div class="paused-overlay" id="paused-overlay" hidden><strong>模拟已暂停</strong><span>按 Space 继续</span></div>
+      <div class="debug-overlay-badge" id="debug-overlay-badge" hidden>调试叠层 · P</div>
     </div>
     <script src="game.core.js?v=20260922-01"></script>
     <script src="game.world.js?v=20260922-01"></script>

@@ -291,6 +291,22 @@ function selectionBuildingIds() {
   return state.selectedId ? [state.selectedId] : [];
 }
 
+function inputReadiness(building) {
+  let inputs = null;
+  if (building.type === 'smelter') {
+    if (building.recipeResource) inputs = { [building.recipeResource]: 1 };
+    else return Object.values(building.input || {}).some(amount => amount > 0) ? 1 : 0;
+  } else if (building.type === 'assembler' || building.type === 'workbench') {
+    inputs = assemblyRecipeFor(building).inputs;
+  } else if (building.type === 'researchLab') {
+    inputs = cubeRecipes[labProductionCube(building)]?.inputs || null;
+  } else if (building.type === 'thermal') inputs = { coal: 1 };
+  else if (building.type === 'gasTurbine') inputs = { naturalGas: 1 };
+  const entries = inputs ? Object.entries(inputs) : [];
+  if (!entries.length) return 1;
+  return entries.reduce((sum, [resource, amount]) => sum + Math.min(1, (building.input?.[resource] || 0) / Math.max(1, amount)), 0) / entries.length;
+}
+
 function copySelection() {
   const ids = selectionBuildingIds();
   const group = state.buildings.filter(building => ids.includes(building.id));

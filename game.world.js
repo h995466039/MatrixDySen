@@ -246,7 +246,7 @@ function drawResourceNode(node) {
   } else {
     drawResourceGlyph(node.resource, point.x, point.y, size * .72, .92);
   }
-  if (state.zoom >= .62) {
+  if (state.zoom >= .62 || state.debugOverlay) {
     ctx.fillStyle = 'rgba(4,13,22,.82)';
     roundedRect(ctx, point.x - 39, point.y + size * .44, 78, 18, 3); ctx.fill();
     ctx.fillStyle = meta.color;

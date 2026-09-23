@@ -859,6 +859,7 @@ const state = {
   rotation: 0,
   paused: false,
   animTime: 0,
+  debugOverlay: false,
   selectedId: null,
   selectedBeltId: null,
   selectedIds: [],

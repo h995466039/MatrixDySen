@@ -175,6 +175,32 @@ function stepFlyTo(now) {
   else requestAnimationFrame(stepFlyTo);
 }
 
+function toggleDebugOverlay() {
+  state.debugOverlay = !state.debugOverlay;
+  query('#debug-overlay-badge').hidden = !state.debugOverlay;
+  showToast(state.debugOverlay ? '调试叠层开启 · 电网连线/传送带流量/矿脉余量' : '调试叠层关闭');
+}
+
+function showDockTooltip(button) {
+  const tooltip = query('#dock-tooltip');
+  const meta = buildings[button.dataset.tool];
+  if (!tooltip || !meta) return;
+  const techLock = button.dataset.techLock || meta.tech;
+  const lines = [`${meta.label} · 占地 ${meta.size}×${meta.size}`];
+  if (techLock) lines.push(`科技：${techById[techLock]?.label || techLock}${isTechUnlocked(techLock) ? ' · 已授权' : ' · 未解锁'}`);
+  const cost = buildingMaterialCost(button.dataset.tool);
+  const costEntries = Object.entries(cost);
+  if (costEntries.length) {
+    const costText = costEntries.map(([resource, amount]) => `${resources[resource]?.label || resource} ${amount}`).join(' · ');
+    lines.push(`原料建造 ${costText} · 套件库存 ${kitCount(button.dataset.tool)}`);
+  }
+  tooltip.innerHTML = lines.map(line => `<span>${line}</span>`).join('');
+  const rect = button.getBoundingClientRect();
+  tooltip.style.left = `${rect.left + rect.width / 2}px`;
+  tooltip.style.top = `${rect.top - 8}px`;
+  tooltip.hidden = false;
+}
+
 function applyQaDemoState() {
   const mode = qaDemoMode;
   if (!mode) return;
@@ -749,6 +775,29 @@ function runQaPlaythrough() {
   state.clipboard = null;
   state.pasteMode = null;
   rebuildPowerGrids();
+  // —— Sprint 17：调试叠层 / 建造栏 tooltip / 缓存条 ——
+  check(!state.debugOverlay, '调试叠层默认应为关闭');
+  toggleDebugOverlay();
+  check(state.debugOverlay === true && query('#debug-overlay-badge').hidden === false, '调试叠层开关未生效');
+  check(typeof drawDebugOverlay === 'function' && (drawDebugOverlay(), true), '调试叠层绘制函数缺失');
+  toggleDebugOverlay();
+  check(state.debugOverlay === false, '调试叠层未能关闭');
+  const qaDockButton = all('.tool-button').find(button => button.dataset.tool === 'smelter');
+  check(Boolean(qaDockButton), '建造栏缺少冶炼机按钮');
+  if (qaDockButton) {
+    showDockTooltip(qaDockButton);
+    const dockTip = query('#dock-tooltip');
+    check(dockTip.hidden === false && dockTip.textContent.includes('占地') && dockTip.textContent.includes('冶炼'), '建造栏 tooltip 未显示名称/占地');
+    dockTip.hidden = true;
+  }
+  state.selectedId = assembler.id;
+  assembler.input = { copperIngot: 1, siliconWafer: 1 };
+  updateHUD();
+  check(query('#selection-input-fill').style.width === '100%', '输入就绪条在芯片配方输入齐备时未达 100%');
+  assembler.input = { copperIngot: 1 };
+  updateHUD();
+  check(query('#selection-input-fill').style.width === '50%', '输入就绪条未反映部分缺料');
+  state.selectedId = null;
   state.confirmRemoveId = null;
   const passed = failures.length === 0;
   const report = passed
@@ -787,6 +836,13 @@ query('#goal-current-action').addEventListener('click', () => {
   runDiagnosticAction(diagnostic);
 });
 query('#pause-button').addEventListener('click', togglePause);
+const dockTooltip = query('#dock-tooltip');
+if (dockTooltip) {
+  all('.tool-button').forEach(button => {
+    button.addEventListener('pointerenter', () => showDockTooltip(button));
+    button.addEventListener('pointerleave', () => { dockTooltip.hidden = true; });
+  });
+}
 query('#speed-button').addEventListener('click', toggleSimulationSpeed);
 const focusSelectionButton = query('#focus-selection');
 if (focusSelectionButton) focusSelectionButton.addEventListener('click', () => {
