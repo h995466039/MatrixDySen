@@ -42,7 +42,8 @@ function renderCargoOptions() {
   host.innerHTML = cargoOptions().map(option => {
     const active = state.interstellar.cargo === option.resource;
     const available = storageAmount(option.resource);
-    return `<button type="button" class="cargo-option${active ? ' active' : ''}" data-cargo="${option.resource}"><span class="cargo-option-icon" style="--cargo-color:${resources[option.resource].color}">${resources[option.resource].label.slice(0, 1)}</span><span><b>${resources[option.resource].label} ×${option.amount}</b><small>${option.note} · 库存 ${formatNumber(available)}</small></span></button>`;
+    const stationReady = qaPlaythroughMode || planetLogisticsTargets('home', option.resource, 'outbound').some(station => station.type === 'logisticsStation' && logisticsStationAllows(station, option.resource, 'outbound'));
+    return `<button type="button" class="cargo-option${active ? ' active' : ''}${stationReady ? '' : ' unavailable'}" data-cargo="${option.resource}"><span class="cargo-option-icon" style="--cargo-color:${resources[option.resource].color}">${resources[option.resource].label.slice(0, 1)}</span><span><b>${resources[option.resource].label} ×${option.amount}</b><small>${option.note} · 库存 ${formatNumber(available)} · ${stationReady ? '物流站可装载' : '无可用物流站'}</small></span></button>`;
   }).join('');
   all('[data-cargo]').forEach(button => button.addEventListener('click', () => {
     state.interstellar.cargo = button.dataset.cargo;
@@ -105,6 +106,8 @@ function updateStarMapUI() {
   const route = state.interstellar.route;
   const activeTarget = routeTarget();
   const cargo = cargoOptions().find(option => option.resource === state.interstellar.cargo) || cargoOptions()[0];
+  const homeStations = planetLogisticsStations('home');
+  const targetStations = planetLogisticsStations(target.id);
   query('#star-map-lock').hidden = unlocked;
   panel.classList.toggle('star-map-locked', !unlocked);
   all('[data-planet]').forEach(button => {
@@ -118,14 +121,15 @@ function updateStarMapUI() {
     const markerMeta = button.querySelector('small');
     if (markerMeta) {
       const factories = planetFactoryCount(planet.id);
-      const factoryText = factories > 0 ? ` · ${factories} 座设施` : '';
+       const stationText = planetLogisticsStations(planet.id).length ? ` · 物流站 ${planetLogisticsStations(planet.id).length}` : '';
+       const factoryText = factories > 0 ? ` · ${factories} 座设施` : '';
       markerMeta.textContent = locked
         ? '信标未接入'
         : planet.id === activePlanet.id
-          ? `当前工厂${factoryText}`
-          : state.interstellar.visits[planet.id]
-            ? `${planet.role} · ${state.interstellar.visits[planet.id]} 航次${factoryText}`
-            : planet.role;
+             ? `当前工厂${stationText}${factoryText}`
+             : state.interstellar.visits[planet.id]
+             ? `${planet.role} · ${state.interstellar.visits[planet.id]} 航次${stationText}${factoryText}`
+             : `${planet.role}${stationText}`;
     }
   });
   query('#map-button-state').textContent = route ? '航线中' : unlocked ? '已接入' : '未接入';
@@ -135,7 +139,7 @@ function updateStarMapUI() {
   query('#planet-dock-kicker').textContent = target.kicker;
   query('#planet-dock-name').textContent = target.name;
   query('#planet-dock-description').textContent = target.description;
-  query('#planet-reward').textContent = target.resources;
+   query('#planet-reward').textContent = `${target.resources} · 目标物流站 ${targetStations.length || '待建设'}`;
   query('#route-trip-count').textContent = formatNumber(state.interstellar.completedTrips);
   query('#route-log-count').textContent = `${state.interstellar.log.length} 条`;
   const routeTitle = query('#route-title');
@@ -164,15 +168,20 @@ function updateStarMapUI() {
     routeFill.style.width = '0%';
   }
   const launch = query('#launch-route-button');
-  const cargoAvailable = storageAmount(cargo.resource) >= cargo.amount;
-  launch.disabled = !unlocked || activePlanet.id !== 'home' || target.id === 'home' || Boolean(route) || !cargoAvailable || target.requires.some(requirement => !isTechUnlocked(requirement));
+   const cargoAvailable = storageAmount(cargo.resource) >= cargo.amount;
+   const cargoStationReady = qaPlaythroughMode || homeStations.some(station => logisticsStationAllows(station, cargo.resource, 'outbound'));
+   launch.disabled = !unlocked || activePlanet.id !== 'home' || target.id === 'home' || Boolean(route) || !cargoAvailable || !cargoStationReady || target.requires.some(requirement => !isTechUnlocked(requirement));
   query('#launch-route-cost').textContent = activePlanet.id !== 'home'
     ? '返回母星后才能派遣'
     : !unlocked
       ? '完成「星际物流」后可用'
       : route
         ? '当前货运舱完成后可再次派遣'
-        : `${resources[cargo.resource].label} ×${cargo.amount} · 单程 ${effectiveTravelTime(target)} 秒`;
+       : !homeStations.length
+         ? '先在母星建设行星物流站'
+         : !cargoStationReady
+           ? '当前物流站未允许运输该货物'
+           : `${resources[cargo.resource].label} ×${cargo.amount} · 单程 ${effectiveTravelTime(target)} 秒`;
   const landButton = query('#planet-land-button');
   const landLabel = query('#planet-land-label');
   const landNote = query('#planet-land-note');
@@ -199,7 +208,15 @@ function updateStarMapUI() {
 
 function renderStarMap() {
   all('[data-planet]').forEach(button => button.onclick = () => {
-    state.interstellar.selectedPlanet = button.dataset.planet;
+    const planet = planetById[button.dataset.planet];
+    if (!planet) return;
+    state.interstellar.selectedPlanet = planet.id;
+    const locked = planet.requires.some(requirement => !isTechUnlocked(requirement));
+    const canOpenMap = !locked && (planet.id === 'home' || planet.id === state.activePlanet || Boolean(state.interstellar.visits[planet.id]));
+    if (canOpenMap && !state.interstellar.route && planet.id !== state.activePlanet) {
+      switchActivePlanet(planet.id);
+      return;
+    }
     updateStarMapUI();
   });
   query('#planet-land-button').onclick = () => {
@@ -250,6 +267,11 @@ function formatCost(cost) {
   return Object.entries(cost).map(([resource, amount]) => `${resources[resource]?.label || resource} ${amount}`).join(' · ');
 }
 
+function techResearchSeconds(tech) {
+  const cubeTier = resources[tech.cube]?.tier || 0;
+  return Math.round((tech.cost / Math.max(.1, 1.25 * getResearchSpeed()) * (1 + cubeTier * .08)) * 10) / 10;
+}
+
 function techNodeMarkup(tech, mainline = false) {
   const unlocked = isTechUnlocked(tech.id);
   const available = hasTechPrerequisites(tech);
@@ -272,7 +294,7 @@ function techNodeMarkup(tech, mainline = false) {
     <strong>${tech.label}</strong>
     <span class="tech-node-short">${tech.short}</span>
     <span class="tech-node-detail">${tech.description}</span>
-    <span class="tech-node-footer"><span class="cube-key" style="--cube-color:${cube.color}">${cube.label} ×${tech.cost}</span><span>${unlocks}</span>${upgrades ? `<span class="tech-node-upgrade">${upgrades}</span>` : ''}<span class="tech-node-effect">${tech.effectText || '扩展研究权限'}</span></span>
+    <span class="tech-node-footer"><span class="cube-key" style="--cube-color:${cube.color}">${cube.label} ×${tech.cost}</span><span class="tech-node-time">预计 ${techResearchSeconds(tech)} 秒</span><span>${unlocks}</span>${upgrades ? `<span class="tech-node-upgrade">${upgrades}</span>` : ''}<span class="tech-node-effect">${tech.effectText || '扩展研究权限'}</span></span>
     <span class="tech-node-requirement">前置：${requirement}</span>
     <span class="tech-node-progress"><i style="width:${percent}%"></i></span>
     <span class="tech-node-action">${unlocked ? '研究完成' : active ? '正在消耗矩阵' : locked ? '等待前置' : '开始研究'}</span>
@@ -281,7 +303,14 @@ function techNodeMarkup(tech, mainline = false) {
 
 function renderTechPanel() {
   query('#mainline-tech').innerHTML = techTree.mainline.map(tech => techNodeMarkup(tech, true)).join('');
-  query('#branch-tech').innerHTML = techTree.branches.map(tech => techNodeMarkup(tech)).join('');
+  const mainlineIds = new Set(techTree.mainline.map(tech => tech.id));
+  const lanes = new Map();
+  techTree.branches.forEach(tech => {
+    const root = tech.requires?.find(requirement => mainlineIds.has(requirement)) || tech.requires?.[0] || 'planetary-logistics';
+    if (!lanes.has(root)) lanes.set(root, []);
+    lanes.get(root).push(tech);
+  });
+  query('#branch-tech').innerHTML = [...lanes.entries()].map(([root, nodes]) => `<section class="tech-lane"><div class="tech-lane-head"><span>分支起点</span><strong>${techById[root]?.label || root}</strong><small>${nodes.length} 个后续节点</small></div><div class="tech-lane-path">${nodes.map((tech, index) => `${index ? '<span class="tech-branch-link" aria-hidden="true"></span>' : ''}${techNodeMarkup(tech)}`).join('')}</div></section>`).join('');
   all('[data-research]').forEach(button => button.addEventListener('click', () => startResearch(button.dataset.research)));
   updateResearchUI();
 }
@@ -370,7 +399,10 @@ function toggleStarMap(force) {
 function getItemPoint(item) {
   const belt = state.belts.find(entry => entry.id === item.beltId);
   if (!belt) return null;
-  const travel = Math.min(belt.length - 1, item.progress * (belt.length - 1));
+  const legacyTravel = item.segmentIndex === undefined ? item.progress * (belt.length - 1) : null;
+  const travel = legacyTravel === null
+    ? clamp((Number(item.segmentIndex) || 0) + (Number(item.progress) || 0), 0, Math.max(0, belt.length - 1))
+    : Math.min(belt.length - 1, legacyTravel);
   return worldToScreen(belt.x + belt.dx * travel + .5, belt.y + belt.dy * travel + .5);
 }
 
@@ -380,9 +412,9 @@ function drawItems() {
     if (!point) return;
     const meta = resources[item.resource] || { color: '#c7d94c' };
     const color = meta.color;
-    const itemSize = clamp(15 * state.zoom * (1 + Math.sin(state.animTime * 5 + item.progress * 6) * .06), 8, 18);
+    const itemSize = clamp(17 * state.zoom * (1 + Math.sin(state.animTime * 5 + item.progress * 6) * .06), 9, 20);
     ctx.fillStyle = color;
-    ctx.shadowColor = color; ctx.shadowBlur = 10;
+    ctx.shadowColor = color; ctx.shadowBlur = 13;
     if (hasImage(assets[meta.image])) {
       const itemSprite = rasterizedAsset(meta.image) || assets[meta.image];
       ctx.drawImage(itemSprite, point.x - itemSize / 2, point.y - itemSize / 2, itemSize, itemSize);
@@ -817,7 +849,7 @@ function updateObjective() {
 }
 
 function buildingRecipeText(building) {
-  if (isStorageType(building)) return `${building.type === 'logisticsStation' ? '星际货物中转' : `${storageFormOf(building) === 'solid' ? '固体' : storageFormOf(building) === 'liquid' ? '液体' : '气体'}仓储`} · ${storageUsed(building)}/${storageCapacity(building)}`;
+  if (isStorageType(building)) return `${building.type === 'logisticsStation' ? `星际货物中转 · ${building.logisticsFilter === 'all' || !building.logisticsFilter ? '全部货物' : resources[building.logisticsFilter]?.label || building.logisticsFilter}` : `${storageFormOf(building) === 'solid' ? '固体' : storageFormOf(building) === 'liquid' ? '液体' : '气体'}仓储`} · ${storageUsed(building)}/${storageCapacity(building)}`;
   if (building.type === 'miner') {
     const node = state.nodes.find(item => item.id === building.nodeId);
     return node ? `${resources[node.resource].label}矿脉 → ${resources[node.resource].label}` : '矿脉 → 原矿';
@@ -855,7 +887,8 @@ function buildingRecipeText(building) {
 }
 
 function buildingStatus(building) {
-  if (!isBuildingOperational(building)) return '科技锁定';
+  if ((building.constructionRemaining || 0) > 0) return `施工中 · ${Math.ceil(building.constructionRemaining)} 秒`;
+  if (!isBuildingUnlocked(building.type)) return '科技锁定';
   if ((building.type === 'assembler' || building.type === 'workbench') && !assemblyRecipeUnlocked(building, assemblyRecipeFor(building))) return '配方锁定';
   if (building.type === 'thermal' && (building.input.coal || 0) <= 0) return '缺煤';
   if (building.type === 'gasTurbine' && (building.input.naturalGas || 0) <= 0) return '缺气';
@@ -1317,6 +1350,44 @@ function renderSorterRouting(building) {
   }).join('');
 }
 
+function renderRecipeOptions(building) {
+  const panel = query('#recipe-options');
+  if (!panel) return;
+  const visible = Boolean(building && ['smelter', 'assembler', 'workbench', 'researchLab'].includes(building.type));
+  if (!visible) {
+    panel.hidden = true;
+    panel.dataset.signature = '';
+    return;
+  }
+  const options = building.type === 'smelter'
+    ? smelterRecipeOptions.map(resource => ({ id: resource || 'auto', label: resource ? `${resources[resource].label}矿` : '自动识别', selected: (building.recipeResource || 'auto') === (resource || 'auto'), note: resource ? '固定输入' : '按首件来料' }))
+    : building.type === 'researchLab'
+      ? ['auto', ...Object.keys(cubeRecipes)].map(id => ({ id, label: id === 'auto' ? '自动跟随' : cubeRecipes[id].label, selected: (building.researchMode || 'auto') === id, note: id === 'auto' ? '跟随当前研究' : `耗时 ${getResearchProductionTime(building, id).toFixed(1)} 秒` }))
+      : assemblyRecipesForBuilding(building).map(recipe => ({ id: recipe.output, label: recipe.label, selected: recipe.output === building.recipeId, note: `${formatRecipeInputs(recipe.inputs)} · ${recipe.time.toFixed(1)} 秒` }));
+  const signature = `${building.id}|${building.type}|${building.recipeId || ''}|${building.recipeResource || ''}|${building.researchMode || ''}|${options.length}`;
+  if (panel.dataset.signature === signature) { panel.hidden = false; return; }
+  panel.dataset.signature = signature;
+  panel.hidden = false;
+  panel.innerHTML = `<span>配方选择</span><div class="recipe-option-list">${options.map(option => `<button type="button" class="recipe-option${option.selected ? ' active' : ''}" data-selection-recipe-id="${escapeHtml(option.id)}"><b>${escapeHtml(option.label)}</b><small>${escapeHtml(option.note)}</small></button>`).join('')}</div>`;
+}
+
+function renderLogisticsStationOptions(building) {
+  const panel = query('#logistics-station-picker');
+  const host = query('#logistics-station-options');
+  if (!panel || !host) return;
+  if (!building || building.type !== 'logisticsStation') {
+    panel.hidden = true;
+    panel.dataset.signature = '';
+    return;
+  }
+  const signature = `${building.id}|${building.logisticsFilter || 'all'}|${building.logisticsMode || 'both'}`;
+  if (panel.dataset.signature === signature) { panel.hidden = false; return; }
+  panel.dataset.signature = signature;
+  panel.hidden = false;
+  const filterOptions = ['all', ...sorterRouteCatalog].filter((resource, index, list) => resource === 'all' || (resources[resource] && list.indexOf(resource) === index));
+  host.innerHTML = `<label><span>货物</span><select data-logistics-filter>${filterOptions.map(resource => `<option value="${resource}"${(building.logisticsFilter || 'all') === resource ? ' selected' : ''}>${resource === 'all' ? '全部货物' : escapeHtml(resources[resource].label)}</option>`).join('')}</select></label><label><span>方向</span><select data-logistics-mode><option value="both"${(building.logisticsMode || 'both') === 'both' ? ' selected' : ''}>双向</option><option value="inbound"${building.logisticsMode === 'inbound' ? ' selected' : ''}>仅接收</option><option value="outbound"${building.logisticsMode === 'outbound' ? ' selected' : ''}>仅发出</option></select></label>`;
+}
+
 function confirmCareer() {
   if (state.careerChosen || !careerCatalog[state.pendingCareer]) return;
   state.career = state.pendingCareer;
@@ -1348,7 +1419,11 @@ function renderCraftPanel() {
     .map(recipe => `${recipe.label} ${kitCount(recipe.output)}`)
     .join(' · ') || '暂无可用建筑';
   query('#craft-material-summary').textContent = materialSummary;
-  query('#craft-kit-summary').textContent = kitSummary;
+  const activeCraft = state.craftingQueue?.[0];
+  const activeRecipe = activeCraft ? craftRecipeById(activeCraft.recipeId) : null;
+  query('#craft-kit-summary').textContent = activeRecipe
+    ? `${kitSummary} · 制造中 ${activeRecipe.label} ${Math.ceil(activeCraft.remaining)} 秒`
+    : kitSummary;
   host.innerHTML = handcraftRecipes.map(recipe => {
     const cost = craftCost(recipe);
     const techLocked = recipe.tech && !isTechUnlocked(recipe.tech);
@@ -1415,7 +1490,9 @@ function updateHUD() {
   query('#production-rates').textContent = shownRates.length
     ? shownRates.map(entry => `${resources[entry.resource].label} ${Math.round(entry.rate)}/分`).join(' · ')
     : '暂无产出';
-  query('#craft-button-state').textContent = `可用 ${Object.values(state.kits).reduce((total, amount) => total + Math.floor(amount || 0), 0)}`;
+  query('#craft-button-state').textContent = state.craftingQueue?.length
+    ? `队列 ${state.craftingQueue.length}`
+    : `可用 ${Object.values(state.kits).reduce((total, amount) => total + Math.floor(amount || 0), 0)}`;
   const modeLabel = state.tool === 'inspect' ? '检视模式' : state.tool === 'demolish' ? '拆除模式' : buildings[state.tool]?.label || '传送带';
   query('#tool-label').textContent = modeLabel;
   query('#build-mode-badge').dataset.mode = state.tool;
@@ -1472,9 +1549,13 @@ function updateHUD() {
   const interfaceLine = query('#selection-interface-line');
   const gridLine = query('#selection-grid-line');
   const gridAction = query('#selection-grid-action');
+  const recipeOptions = query('#recipe-options');
+  const logisticsPicker = query('#logistics-station-picker');
   renderSorterRouting(selected?.type === 'sorter' ? selected : null);
+  renderRecipeOptions(selected);
+  renderLogisticsStationOptions(selected);
   const multiCount = state.selectedIds?.length || 0;
-  if (!selected && !selectedBelt && multiCount <= 1) { selection.hidden = true; labModePicker.hidden = true; sorterInterface.hidden = true; stockLine.hidden = true; interfaceLine.hidden = true; gridLine.hidden = true; gridAction.hidden = true; }
+  if (!selected && !selectedBelt && multiCount <= 1) { selection.hidden = true; labModePicker.hidden = true; sorterInterface.hidden = true; stockLine.hidden = true; interfaceLine.hidden = true; gridLine.hidden = true; gridAction.hidden = true; if (recipeOptions) recipeOptions.hidden = true; if (logisticsPicker) logisticsPicker.hidden = true; }
   else if (!selected && !selectedBelt && multiCount > 1) {
     selection.hidden = false;
     labModePicker.hidden = true;
@@ -1483,6 +1564,8 @@ function updateHUD() {
     interfaceLine.hidden = true;
     gridLine.hidden = true;
     gridAction.hidden = true;
+    if (recipeOptions) recipeOptions.hidden = true;
+    if (logisticsPicker) logisticsPicker.hidden = true;
     query('#selection-name').textContent = `${multiCount} 座建筑`;
     query('#selection-state').textContent = '框选状态 · 拖拽整体移动';
     query('#selection-state').style.color = '#62d69a';
@@ -1506,6 +1589,8 @@ function updateHUD() {
     interfaceLine.hidden = true;
     gridLine.hidden = true;
     gridAction.hidden = true;
+    if (recipeOptions) recipeOptions.hidden = true;
+    if (logisticsPicker) logisticsPicker.hidden = true;
     query('#selection-name').textContent = `传送带 · ${selectedBelt.length} 格`;
     query('#selection-state').textContent = beltItems.length ? '运输中' : '待命';
     query('#selection-state').style.color = '#62d69a';
@@ -1516,7 +1601,7 @@ function updateHUD() {
     query('#selection-production').textContent = '—';
     query('#selection-tech').textContent = '基础物流授权 · 已接入';
     const beltLevel = getBuildingLevel('belt');
-    query('#selection-license').textContent = `MK-${beltLevel} · ${getBeltTravelFactor().toFixed(2)} 格/秒`;
+     query('#selection-license').textContent = `MK-${beltLevel} · ${(1 / Math.max(.01, getBeltTravelFactor())).toFixed(2)} 格/秒`;
     const beltUpgrade = buildingUpgradeTechs('belt').find(tech => !isTechUnlocked(tech.id));
     query('#selection-upgrade').textContent = beltUpgrade ? `下一项「${beltUpgrade.label}」` : '已达到 MK-V';
     query('#selection-progress-fill').style.width = `${clamp(beltItems.length / Math.max(1, selectedBelt.length), 0, 1) * 100}%`;
@@ -1529,6 +1614,8 @@ function updateHUD() {
     sorterInterface.hidden = selected.type !== 'sorter';
     stockLine.hidden = !isStorageType(selected);
     interfaceLine.hidden = !isStorageType(selected) && selected.type !== 'sorter';
+    if (recipeOptions) recipeOptions.hidden = !['smelter', 'assembler', 'workbench', 'researchLab'].includes(selected.type);
+    if (logisticsPicker) logisticsPicker.hidden = selected.type !== 'logisticsStation';
     if (selected.type === 'researchLab') all('[data-lab-mode]').forEach(button => button.classList.toggle('active', (selected.researchMode || 'auto') === button.dataset.labMode));
     query('#selection-name').textContent = meta.label;
     const input = Object.entries(selected.input || {}).filter(([, amount]) => amount > 0).map(([resource, amount]) => `${resources[resource]?.label || resource} ${Math.floor(amount)}`).join(' · ');

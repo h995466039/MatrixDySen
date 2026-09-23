@@ -135,6 +135,7 @@ button:focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; }
 .tech-node-detail { min-height: 34px; color: var(--muted); font-size: 9px; line-height: 1.45; }
 .tech-node-footer { display: grid; gap: 3px; margin-top: auto; color: var(--muted); font-size: 8px; line-height: 1.35; }
 .tech-node-upgrade { color: var(--cyan); }
+.tech-node-time { color: var(--orange); }
 .tech-node-effect { color: var(--lime); }
 .cube-key { color: var(--cube-color); }
 .cube-key::before { content: ""; display: inline-block; width: 5px; height: 5px; margin-right: 5px; border-radius: 50%; background: var(--cube-color); box-shadow: 0 0 0 3px color-mix(in srgb, var(--cube-color) 14%, transparent); }
@@ -146,8 +147,25 @@ button:focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; }
 .tech-node.researched .tech-node-action { color: var(--green); }
 .tech-node.locked .tech-node-action { color: var(--faint); }
 .branch-section { padding-top: 2px; border-top: 1px solid var(--line); }
-.branch-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
-.branch-grid .tech-node { min-height: 190px; }
+.branch-grid { display: grid; gap: 10px; }
+.tech-lane { position: relative; padding: 8px 0 9px 10px; border-left: 1px solid rgba(105, 216, 218, .26); }
+.tech-lane::before { content: ""; position: absolute; left: -1px; top: 26px; width: 10px; border-top: 1px solid rgba(105, 216, 218, .26); }
+.tech-lane-head { display: flex; align-items: baseline; gap: 7px; margin: 0 0 7px 10px; color: var(--muted); font-size: 8px; }
+.tech-lane-head span { color: var(--faint); text-transform: uppercase; letter-spacing: .1em; }
+.tech-lane-head strong { color: var(--cyan); font-size: 9px; }
+.tech-lane-head small { color: var(--faint); }
+.tech-lane-path { display: flex; align-items: stretch; gap: 5px; overflow-x: auto; padding: 0 0 3px 10px; }
+.tech-lane-path .tech-node { min-width: 155px; min-height: 174px; flex: 1 0 155px; }
+.tech-branch-link { align-self: center; width: 14px; height: 1px; flex: 0 0 14px; background: rgba(105, 216, 218, .34); }
+.recipe-options, .logistics-station-picker { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
+.recipe-options > span, .logistics-station-picker > span { display: block; margin-bottom: 5px; color: var(--faint); font-size: 8px; }
+.recipe-option-list, .logistics-station-options { display: grid; gap: 4px; }
+.recipe-option { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px; align-items: center; padding: 5px 6px; border: 1px solid var(--line); color: var(--muted); background: rgba(14, 31, 45, .72); text-align: left; }
+.recipe-option b { overflow: hidden; color: var(--ink); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.recipe-option small { overflow: hidden; color: var(--faint); font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
+.recipe-option:hover, .recipe-option.active { border-color: var(--cyan); background: rgba(105, 216, 218, .1); }
+.logistics-station-options label { display: grid; grid-template-columns: 42px minmax(0, 1fr); align-items: center; gap: 5px; color: var(--muted); font-size: 8px; }
+.logistics-station-options select { min-width: 0; height: 23px; padding: 0 4px; border: 1px solid var(--line); color: var(--ink); background: rgba(14, 31, 45, .88); font: inherit; }
 .advanced-tool .tool-icon { color: var(--cyan); }
 .tool-button.locked { opacity: .68; }
 .tool-button.locked .tool-icon { color: var(--faint); }
@@ -170,8 +188,7 @@ button:focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; }
   .tech-panel-head p { font-size: 9px; }
   .matrix-stock { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .tech-track { margin-inline: -2px; }
-  .branch-grid { grid-template-columns: 1fr; }
-  .branch-grid .tech-node { min-height: 154px; }
+  .tech-lane-path .tech-node { min-height: 154px; }
   .active-research { padding: 10px; }
 }
 @media (prefers-reduced-motion: reduce) {

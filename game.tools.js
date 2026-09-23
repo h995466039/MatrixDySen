@@ -129,8 +129,13 @@ function runDiagnosticAction(diagnostic = getFactoryDiagnostic()) {
   }
 }
 
+function setPaused(paused) {
+  state.paused = paused;
+  document.body.classList.toggle('sim-paused', paused);
+}
+
 function togglePause() {
-  state.paused = !state.paused;
+  setPaused(!state.paused);
   query('#pause-label').textContent = state.paused ? '继续' : '暂停';
   query('#pause-glyph').textContent = state.paused ? '▶' : 'Ⅱ';
   query('#paused-overlay').hidden = !state.paused;
@@ -274,7 +279,7 @@ function applyQaDemoState() {
   }
   state.camera = { x: 0, y: 1 };
   state.selectedId = mode === 'sorter' ? state.buildings.find(building => building.type === 'sorter')?.id || null : null;
-  state.paused = false;
+  setPaused(false);
 }
 
 function runQaPlaythrough() {

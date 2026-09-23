@@ -17,6 +17,24 @@ function buildingMaterialCost(type) {
   return cost;
 }
 
+function constructionTimeFor(type) {
+  const meta = buildings[type];
+  if (!meta) return 0;
+  const level = clamp(getBuildingLevel(type), 1, 5);
+  const complexity = Object.keys(meta.cost || {}).length + meta.size * 1.5;
+  return Math.round((4 + complexity * 2.2 + level * 1.4) * 10) / 10;
+}
+
+function craftTimeFor(recipe) {
+  const outputTier = resources[recipe.output]?.tier || (recipe.buildingType ? 1 : 0);
+  const complexity = Object.keys(craftCost(recipe) || {}).length;
+  return Math.round((1.5 + outputTier * 1.2 + complexity * .45 + (recipe.output === 'belt' ? .5 : 0)) * 10) / 10;
+}
+
+function craftRecipeById(id) {
+  return handcraftRecipes.find(recipe => recipe.id === id) || null;
+}
+
 function canUseKit(type) {
   return kitCount(type) > 0;
 }
@@ -45,12 +63,35 @@ function craftRecipe(id) {
     return;
   }
   spend(cost);
-  if (recipe.outputType === 'kit') state.kits[recipe.output] = kitCount(recipe.output) + recipe.amount;
-  else state.inventory[recipe.output] = (state.inventory[recipe.output] || 0) + recipe.amount;
+  const total = craftTimeFor(recipe);
+  state.craftingQueue = Array.isArray(state.craftingQueue) ? state.craftingQueue : [];
+  state.craftingQueue.push({ id: `craft-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, recipeId: recipe.id, amount: recipe.amount, remaining: total, total });
   saveGame();
-  showToast(`${recipe.outputLabel} 已加入建筑库存${storageHintFor(lastSpendFromStorage)}`);
+  showToast(`${recipe.outputLabel} 已进入制造队列 · ${total.toFixed(1)} 秒${storageHintFor(lastSpendFromStorage)}`);
   renderCraftPanel();
   updateHUD();
+}
+
+function completeCraftJob(job, recipe) {
+  if (recipe.outputType === 'kit') state.kits[recipe.output] = kitCount(recipe.output) + recipe.amount;
+  else state.inventory[recipe.output] = (state.inventory[recipe.output] || 0) + recipe.amount;
+}
+
+function simulateCrafting(dt) {
+  if (!Array.isArray(state.craftingQueue) || !state.craftingQueue.length) return;
+  let remainingDt = Math.max(0, dt);
+  while (remainingDt > 0 && state.craftingQueue.length) {
+    const job = state.craftingQueue[0];
+    const recipe = craftRecipeById(job.recipeId);
+    if (!recipe) { state.craftingQueue.shift(); continue; }
+    const step = Math.min(remainingDt, Math.max(0, job.remaining));
+    job.remaining = Math.max(0, job.remaining - step);
+    remainingDt -= step;
+    if (job.remaining > 0) break;
+    completeCraftJob(job, recipe);
+    state.craftingQueue.shift();
+    showToast(`${recipe.outputLabel} 制造完成`);
+  }
 }
 
 function totalAmount(resource) {
@@ -159,7 +200,7 @@ function isBuildingUnlocked(type) {
 }
 
 function isBuildingOperational(building) {
-  return Boolean(building && buildings[building.type] && isBuildingUnlocked(building.type));
+  return Boolean(building && buildings[building.type] && isBuildingUnlocked(building.type) && (building.constructionRemaining || 0) <= 0);
 }
 
 function formatRecipeInputs(inputs) {
@@ -239,12 +280,14 @@ function placeBuilding(cell) {
   if (state.tool === 'miner') building.nodeId = findNodeForBuilding(building)?.id || null;
   if (['oilExtractor', 'waterPump', 'gasExtractor'].includes(state.tool)) building.nodeId = findNodeForBuilding(building)?.id || null;
   consumeBuildKit(state.tool);
+  building.constructionTotal = constructionTimeFor(building.type);
+  building.constructionRemaining = building.constructionTotal;
   state.buildings.push(building);
   rebuildPowerGrids();
   state.selectedId = building.id;
   state.selectedBeltId = null;
   saveGame();
-  showToast(`${buildings[state.tool].label} 已部署`);
+  showToast(`${buildings[state.tool].label} 已开工 · ${building.constructionTotal.toFixed(1)} 秒后投入运行`);
 }
 
 // —— Sprint 16：框选 / 批量移动 / 复制粘贴 ——
@@ -456,23 +499,73 @@ function removeAt(cell, options = {}) {
   }
   const beltIndex = state.belts.findIndex(belt => beltCells(belt).some(entry => entry.x === cell.x && entry.y === cell.y));
   if (beltIndex !== -1) {
-    const [belt] = state.belts.splice(beltIndex, 1);
+    const belt = state.belts[beltIndex];
+    const removedIndex = beltCells(belt).findIndex(entry => entry.x === cell.x && entry.y === cell.y);
+    const removeWholeBelt = qaPlaythroughMode || belt.length <= 1;
+    if (removeWholeBelt) {
+      state.belts.splice(beltIndex, 1);
+      state.buildings.filter(building => building.type === 'sorter').forEach(sorter => {
+        Object.entries(sorter.sorterRules || {}).forEach(([resource, beltId]) => {
+          if (beltId === belt.id) delete sorter.sorterRules[resource];
+        });
+      });
+      const inFlight = state.items.filter(item => item.beltId === belt.id);
+      inFlight.forEach(item => {
+        state.inventory[item.resource] = (state.inventory[item.resource] || 0) + 1;
+      });
+      const kitCells = Math.max(0, belt.kitCells || 0);
+      state.kits.belt += Math.floor(kitCells * .6);
+      state.inventory.iron += Math.floor((belt.length - kitCells) * .6);
+      state.selectedBeltId = null;
+      state.items = state.items.filter(item => item.beltId !== belt.id);
+      saveGame();
+      if (!quiet) showToast(inFlight.length ? `传送带已回收 · 在途 ${inFlight.length} 件货物已转入随身库存` : '传送带已回收');
+      return 'belt';
+    }
+
+    const prefixLength = removedIndex;
+    const suffixLength = belt.length - removedIndex - 1;
+    const prefix = prefixLength > 0 ? { ...belt, length: prefixLength } : null;
+    const suffix = suffixLength > 0 ? {
+      ...belt,
+      id: `belt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      x: belt.x + belt.dx * (removedIndex + 1),
+      y: belt.y + belt.dy * (removedIndex + 1),
+      length: suffixLength
+    } : null;
+    const prefixKit = prefix ? Math.min(prefixLength, Math.max(0, belt.kitCells || 0)) : 0;
+    const suffixKit = suffix ? Math.min(suffixLength, Math.max(0, (belt.kitCells || 0) - prefixKit)) : 0;
+    if (prefix) prefix.kitCells = prefixKit;
+    if (suffix) suffix.kitCells = suffixKit;
+    state.belts.splice(beltIndex, 1, ...[prefix, suffix].filter(Boolean));
+    const replacementId = prefix?.id || suffix?.id || null;
     state.buildings.filter(building => building.type === 'sorter').forEach(sorter => {
       Object.entries(sorter.sorterRules || {}).forEach(([resource, beltId]) => {
-        if (beltId === belt.id) delete sorter.sorterRules[resource];
+        if (beltId === belt.id) {
+          if (replacementId) sorter.sorterRules[resource] = replacementId;
+          else delete sorter.sorterRules[resource];
+        }
       });
     });
-    const inFlight = state.items.filter(item => item.beltId === belt.id);
-    inFlight.forEach(item => {
-      state.inventory[item.resource] = (state.inventory[item.resource] || 0) + 1;
+    let removedItems = 0;
+    state.items = state.items.flatMap(item => {
+      if (item.beltId !== belt.id) return [item];
+      const legacyPosition = item.segmentIndex === undefined ? (item.progress || 0) * Math.max(0, belt.length - 1) : null;
+      const itemIndex = item.segmentIndex === undefined ? Math.floor(legacyPosition) : Math.max(0, Math.min(belt.length - 1, item.segmentIndex));
+      if (itemIndex === removedIndex) {
+        state.inventory[item.resource] = (state.inventory[item.resource] || 0) + 1;
+        removedItems += 1;
+        return [];
+      }
+      if (itemIndex < removedIndex && prefix) return [{ ...item, beltId: prefix.id, segmentIndex: itemIndex, progress: item.segmentIndex === undefined ? legacyPosition - itemIndex : item.progress }];
+      if (itemIndex > removedIndex && suffix) return [{ ...item, beltId: suffix.id, segmentIndex: itemIndex - removedIndex - 1, progress: item.segmentIndex === undefined ? legacyPosition - itemIndex : item.progress }];
+      return [];
     });
-    const kitCells = Math.max(0, belt.kitCells || 0);
-    state.kits.belt += Math.floor(kitCells * .6);
-    state.inventory.iron += Math.floor((belt.length - kitCells) * .6);
+    if (removedIndex < (belt.kitCells || 0)) state.kits.belt += 1;
+    else state.inventory.iron += 1;
     state.selectedBeltId = null;
-    state.items = state.items.filter(item => item.beltId !== belt.id);
     saveGame();
-    if (!quiet) showToast(inFlight.length ? `传送带已回收 · 在途 ${inFlight.length} 件货物已转入随身库存` : '传送带已回收');
+    if (!quiet) showToast(removedItems ? `传送带第 ${removedIndex + 1} 节已回收 · ${removedItems} 件货物已转入随身库存` : `传送带第 ${removedIndex + 1} 节已回收`);
     return 'belt';
   }
   if (!quiet) showToast('这里没有可拆除对象', 'warning');
@@ -551,7 +644,9 @@ function findSorterOutputBelt(sorter, resource) {
 
 function acceptsBuildingResource(building, resource) {
   if (!isBuildingOperational(building)) return false;
-  if (isStorageType(building)) return storageFormOf(building) === resourceForm(resource) && storageHasSpace(building);
+  if (isStorageType(building)) return storageAcceptsResource(building, resource)
+    && (building.type !== 'logisticsStation' || logisticsStationAllows(building, resource, 'inbound'))
+    && storageHasSpace(building);
   if (building.type === 'smelter') {
     // One smelter is one recipe line. This prevents a shared line from
     // silently filling with three ores while producing none of them reliably.
@@ -686,6 +781,7 @@ function dispatchStorageStock() {
       if (Object.values(sorter.output || {}).reduce((sum, amount) => sum + amount, 0) >= inputCapacity(sorter)) return;
       const candidates = Object.keys(storage.stock || {}).map(resource => {
         if ((storage.stock[resource] || 0) <= 0) return null;
+        if (storage.type === 'logisticsStation' && !logisticsStationAllows(storage, resource, 'outbound')) return null;
         const belt = sorterOutputBelts(sorter).find(candidate => Boolean(findDestinationAlongRoute(candidate, resource, sorter.id)));
         if (!belt) return null;
         // 仓储物料只供应生产设施：目的地仍是仓储的直接跳过，防止仓储↔仓储无限摆渡
@@ -715,7 +811,7 @@ function simulateSorters(dt) {
       if (sorter.process < getSorterCycleTime(sorter)) return;
       const [resource] = entry;
       if (isStorageType(target)) {
-        if (storageFormOf(target) !== resourceForm(resource) || !storageHasSpace(target)) return;
+        if (!storageAcceptsResource(target, resource) || !storageHasSpace(target)) return;
         target.stock[resource] = (target.stock[resource] || 0) + 1;
       } else {
         if (!acceptsBuildingResource(target, resource) || (target.input[resource] || 0) >= inputCapacity(target)) return;
@@ -735,7 +831,7 @@ function dispatchSorterOutputs() {
       const belt = findSorterOutputBelt(sorter, resource);
       if (!belt) return;
       sorter.output[resource] -= 1;
-      state.items.push({ id: `${Date.now()}-${Math.random()}`, beltId: belt.id, sourceId: sorter.id, resource, progress: 0 });
+      state.items.push({ id: `${Date.now()}-${Math.random()}`, beltId: belt.id, sourceId: sorter.id, resource, segmentIndex: 0, progress: 0 });
     });
   });
 }
@@ -997,6 +1093,12 @@ function buildingProductionRate(buildingId) {
 }
 
 function simulateBuildings(dt) {
+  simulateCrafting(dt);
+  state.buildings.forEach(building => {
+    if ((building.constructionRemaining || 0) <= 0) return;
+    building.constructionRemaining = Math.max(0, building.constructionRemaining - dt);
+    if (building.constructionRemaining === 0) showToast(`${buildings[building.type]?.label || '设施'} 施工完成`);
+  });
   rebuildPowerGrids();
 
   dispatchStorageStock();
@@ -1133,34 +1235,57 @@ function simulateBuildings(dt) {
   dispatchSorterOutputs();
 
   state.items = state.items.filter(item => {
-    const belt = state.belts.find(entry => entry.id === item.beltId);
-    if (!belt) return false;
-    item.progress += dt / Math.max(.55, belt.length * getBeltTravelFactor());
-    if (item.progress < 1) return true;
-    const destination = findDestination(belt, item.resource, item.sourceId);
-    if (destination && deliver(destination, item.resource)) return false;
-    const nextBelt = findNextBelt(belt, item.resource, item.sourceId);
-    if (nextBelt) {
-      item.beltId = nextBelt.id;
+    let remainingDt = Math.max(0, dt);
+    let transitions = 0;
+    while (remainingDt > 0) {
+      const belt = state.belts.find(entry => entry.id === item.beltId);
+      if (!belt) return false;
+      if (!Number.isInteger(item.segmentIndex)) {
+        const legacyTravel = (Number(item.progress) || 0) * Math.max(0, belt.length - 1);
+        item.segmentIndex = Math.floor(legacyTravel);
+        item.progress = legacyTravel - item.segmentIndex;
+      }
+      item.segmentIndex = Math.max(0, Math.min(belt.length - 1, item.segmentIndex));
+      item.progress = Math.max(0, Math.min(1, Number(item.progress) || 0));
+      const cellTravelTime = Math.max(.12, getBeltTravelFactor());
+      const timeToNextCell = Math.max(.001, (1 - item.progress) * cellTravelTime);
+      if (remainingDt < timeToNextCell) {
+        item.progress += remainingDt / cellTravelTime;
+        return true;
+      }
+      remainingDt -= timeToNextCell;
       item.progress = 0;
-      item._stalled = 0;
-      item._hops = (item._hops || 0) + 1;
-      if (item._hops >= 80) {
-        // 环路或长期周转始终送不到目的地：回收为随身货物，避免永动+占死分拣器在途槽位
+      if (item.segmentIndex < belt.length - 1) {
+        item.segmentIndex += 1;
+        continue;
+      }
+      const destination = findDestination(belt, item.resource, item.sourceId);
+      if (destination && deliver(destination, item.resource)) return false;
+      const nextBelt = findNextBelt(belt, item.resource, item.sourceId);
+      if (nextBelt) {
+        item.beltId = nextBelt.id;
+        item.segmentIndex = 0;
+        item.progress = 0;
+        item._stalled = 0;
+        item._hops = (item._hops || 0) + 1;
+        transitions += 1;
+        if (item._hops >= 80 || transitions >= 120) {
+          state.inventory[item.resource] = (state.inventory[item.resource] || 0) + 1;
+          showToast(`周转货物回收 · ${resources[item.resource]?.label || item.resource} ×1 已转入随身库存`, 'warning');
+          return false;
+        }
+        continue;
+      }
+      // 终端滞留：货物停在最后一节，堵塞超过 40 秒后回收。
+      item._stalled = (item._stalled || 0) + remainingDt + timeToNextCell;
+      item.progress = 1;
+      if (item._stalled >= 40) {
         state.inventory[item.resource] = (state.inventory[item.resource] || 0) + 1;
-        showToast(`周转货物回收 · ${resources[item.resource]?.label || item.resource} ×1 已转入随身库存`, 'warning');
+        showToast(`终端货物回收 · ${resources[item.resource]?.label || item.resource} ×1 已转入随身库存`, 'warning');
         return false;
       }
       return true;
     }
-    // 终端滞留：重试 40 秒后仍未消化，回收为随身货物，释放阻塞点
-    item._stalled = (item._stalled || 0) + dt;
-    if (item._stalled >= 40) {
-      state.inventory[item.resource] = (state.inventory[item.resource] || 0) + 1;
-      showToast(`终端货物回收 · ${resources[item.resource]?.label || item.resource} ×1 已转入随身库存`, 'warning');
-      return false;
-    }
-    item.progress = 1;
     return true;
   });
   simulateStellarEnergy(dt);
@@ -1324,12 +1449,37 @@ function launchRoute() {
   if (state.interstellar.route) { showToast('当前已有货运舱在航线上', 'warning'); return; }
   if (!hasTechPrerequisites({ requires: target.requires })) { showToast('该星球的信标尚未接入', 'warning'); return; }
   const cargo = cargoOptions().find(option => option.resource === state.interstellar.cargo) || cargoOptions()[0];
+  const explicitLogistics = !qaPlaythroughMode;
+  if (explicitLogistics && !planetLogisticsStations('home').length) {
+    showToast('母星至少需要一座行星物流站才能装载货运舱', 'warning');
+    return;
+  }
+  if (explicitLogistics && !planetLogisticsTargets('home', cargo.resource, 'outbound').some(station => logisticsStationAllows(station, cargo.resource, 'outbound'))) {
+    showToast(`母星物流站未允许运输${resources[cargo.resource].label}`, 'warning');
+    return;
+  }
   if (storageAmount(cargo.resource) < cargo.amount) {
     showToast(`货舱需要 ${resources[cargo.resource].label} ×${cargo.amount}`, 'warning');
     return;
   }
-  takeFromStorage(cargo.resource, cargo.amount);
-  state.interstellar.route = { id: `route-${Date.now()}`, targetId: target.id, cargo: cargo.resource, amount: cargo.amount, progress: 0, phase: 'outbound' };
+  const loaded = explicitLogistics
+    ? takeFromPlanetLogistics('home', cargo.resource, cargo.amount)
+    : takeFromStorage(cargo.resource, cargo.amount);
+  if (loaded < cargo.amount) {
+    showToast(`物流站实际可装载 ${loaded} / ${cargo.amount} 件${resources[cargo.resource].label}`, 'warning');
+    return;
+  }
+  state.interstellar.route = {
+    id: `route-${Date.now()}`,
+    targetId: target.id,
+    cargo: cargo.resource,
+    amount: cargo.amount,
+    returnCargo: target.reward?.resource || state.interstellar.returnCargo,
+    returnAmount: target.reward?.amount || 1,
+    unloaded: 0,
+    progress: 0,
+    phase: 'outbound'
+  };
   addFlightLog(`货运舱发射 → ${target.name} · ${resources[cargo.resource].label} ×${cargo.amount}`);
   saveGame();
   showToast(`货运舱已发射 · ${target.name}`);
@@ -1343,6 +1493,19 @@ function simulateInterstellar(dt) {
   route.progress += dt / effectiveTravelTime(target);
   if (route.progress < 1) return;
   if (route.phase === 'outbound') {
+    if (!qaPlaythroughMode) {
+      if (!state.planetSnapshots?.[target.id]) {
+        state.planetSnapshots[target.id] = makePlanetSnapshot(target.id);
+      }
+      route.unloaded = putIntoPlanetLogistics(target.id, route.cargo, route.amount);
+      const targetStations = planetLogisticsStations(target.id);
+      if (targetStations.length && route.unloaded < route.amount) {
+        showToast(`${target.name} 物流站容量或货物过滤不足 · 已卸载 ${route.unloaded} 件`, 'warning');
+      }
+      // The remote resource shipment becomes available at the target dock after
+      // the same transit delay; the return leg only pulls what is configured.
+      putIntoPlanetLogistics(target.id, route.returnCargo, route.returnAmount);
+    }
     route.phase = 'returning';
     route.progress = 0;
     addFlightLog(`货运舱抵达 ${target.name} · 开始返航`);
@@ -1350,14 +1513,20 @@ function simulateInterstellar(dt) {
     return;
   }
   const reward = target.reward;
-  const stored = putInStorage(reward.resource, reward.amount);
-  if (stored < reward.amount) state.inventory[reward.resource] = (state.inventory[reward.resource] || 0) + reward.amount - stored;
+  const returnResource = route.returnCargo || reward.resource;
+  const returnAmount = route.returnAmount || reward.amount;
+  const availableReturn = qaPlaythroughMode ? returnAmount : takeFromPlanetLogistics(target.id, returnResource, returnAmount);
+  const deliveredHome = qaPlaythroughMode
+    ? putInStorage(reward.resource, reward.amount)
+    : putIntoPlanetLogistics('home', returnResource, availableReturn);
+  if (qaPlaythroughMode && deliveredHome < reward.amount) state.inventory[reward.resource] = (state.inventory[reward.resource] || 0) + reward.amount - deliveredHome;
+  if (!qaPlaythroughMode && deliveredHome < availableReturn) state.inventory[returnResource] = (state.inventory[returnResource] || 0) + availableReturn - deliveredHome;
   state.interstellar.completedTrips += 1;
   state.interstellar.visits[target.id] = (state.interstellar.visits[target.id] || 0) + 1;
-  addFlightLog(`航次完成 ← ${target.name} · ${resources[reward.resource].label} ×${reward.amount}`);
+  addFlightLog(`航次完成 ← ${target.name} · ${resources[returnResource].label} ×${availableReturn}`);
   state.interstellar.route = null;
   saveGame();
-  showToast(`异星资源已回收 · ${resources[reward.resource].label} ×${reward.amount} · 已开放降落`);
+  showToast(`异星资源已回收 · ${resources[returnResource].label} ×${availableReturn} · 已开放降落`);
 }
 
 const stellarModuleCost = { structureCube: 4, titanium: 2, processor: 1 };

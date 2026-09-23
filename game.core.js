@@ -8,7 +8,7 @@ const TILE = 48;
 // One map represents a whole planet.  The landing zone is intentionally only
 // a small, resource-scarce part of the world; the camera can pan to the remote
 // extraction regions as the factory grows.
-const WORLD_BOUNDS = Object.freeze({ minX: -36, maxX: 36, minY: -24, maxY: 24 });
+const WORLD_BOUNDS = Object.freeze({ minX: -72, maxX: 72, minY: -48, maxY: 48 });
 const terrainRegions = [
   { kind: 'rock', label: '玄武岩岩场', short: '岩石', minX: -33, maxX: -27, minY: -20, maxY: -14 },
   { kind: 'rock', label: '玄武岩岩场', short: '岩石', minX: 12, maxX: 15, minY: -8, maxY: -5 },
@@ -499,9 +499,52 @@ const planetCatalog = [
 ];
 const planetById = Object.fromEntries(planetCatalog.map(planet => [planet.id, planet]));
 
+// Keep authored landing-zone nodes intact, then add a deterministic outer
+// resource belt so every planet can support a large factory.
+function spreadResourceNodes(planetId, template) {
+  const source = template.map(node => ({ ...node }));
+  const targetCount = planetId === 'home' ? 64 : 48;
+  const occupied = new Set(source.map(node => `${node.x},${node.y}`));
+  const hash = [...planetId].reduce((sum, character) => sum + character.charCodeAt(0), 0);
+  let index = 0;
+  let attempts = 0;
+  while (source.length < targetCount && attempts < targetCount * 12) {
+    const angle = (hash * .071 + index * 2.399963) % (Math.PI * 2);
+    const radius = 25 + (index % 6) * 7 + Math.floor(index / 6) * 1.5;
+    const x = clamp(Math.round(Math.cos(angle) * radius * 1.48), WORLD_BOUNDS.minX + 3, WORLD_BOUNDS.maxX - 3);
+    const y = clamp(Math.round(Math.sin(angle) * radius), WORLD_BOUNDS.minY + 3, WORLD_BOUNDS.maxY - 3);
+    const key = `${x},${y}`;
+    if (!occupied.has(key)) {
+      const basis = template[index % Math.max(1, template.length)];
+      source.push({
+        id: `${planetId}-spread-${index}`,
+        x,
+        y,
+        resource: basis.resource,
+        amount: Math.round(Math.max(24000, basis.amount * (.62 + (index % 5) * .08)))
+      });
+      occupied.add(key);
+    }
+    index += 1;
+    attempts += 1;
+  }
+  return source;
+}
+
+Object.keys(planetNodeTemplates).forEach(planetId => {
+  planetNodeTemplates[planetId] = spreadResourceNodes(planetId, planetNodeTemplates[planetId]);
+});
+
 function clonePlanetNodes(planetId) {
   const template = planetNodeTemplates[planetId] || planetNodeTemplates.home;
   return template.map(node => ({ ...node }));
+}
+
+function mergePlanetNodes(planetId, savedNodes) {
+  const savedById = new Map((savedNodes || []).map(node => [node.id, node]));
+  const expanded = clonePlanetNodes(planetId).map(node => savedById.has(node.id) ? { ...node, ...savedById.get(node.id) } : node);
+  const knownIds = new Set(expanded.map(node => node.id));
+  return expanded.concat((savedNodes || []).filter(node => node && !knownIds.has(node.id)).map(node => ({ ...node })));
 }
 
 function makeInterstellarState(savedState = null) {
@@ -574,6 +617,7 @@ function makeBuilding(type, x, y, rotation = 0) {
     id: `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     type, x, y, rotation, input: {}, output: {}, stock: isStorageType(type) ? {} : undefined,
     process: 0, timer: 0, nodeId: null, constructionKit: true,
+    constructionRemaining: 0, constructionTotal: 0,
     researchMode: type === 'researchLab' ? 'auto' : undefined,
     manualResearchMode: false,
     gridEnabled: isPowerTowerType(type) ? true : undefined,
@@ -582,6 +626,8 @@ function makeBuilding(type, x, y, rotation = 0) {
     routeCursor: type === 'sorter' ? 0 : undefined,
     sorterMode: type === 'sorter' ? 'input' : undefined,
     recipeId: type === 'assembler' ? 'processor' : type === 'workbench' ? 'gear' : undefined,
+    logisticsFilter: type === 'logisticsStation' ? 'all' : undefined,
+    logisticsMode: type === 'logisticsStation' ? 'both' : undefined,
     fuelTimer: 0
   };
 }
@@ -591,7 +637,7 @@ function makePlanetSnapshot(planetId, savedSnapshot = null) {
     return {
       buildings: savedSnapshot.buildings,
       belts: Array.isArray(savedSnapshot.belts) ? savedSnapshot.belts : [],
-      nodes: Array.isArray(savedSnapshot.nodes) && savedSnapshot.nodes.length ? savedSnapshot.nodes : clonePlanetNodes(planetId),
+      nodes: Array.isArray(savedSnapshot.nodes) && savedSnapshot.nodes.length ? mergePlanetNodes(planetId, savedSnapshot.nodes) : clonePlanetNodes(planetId),
       items: Array.isArray(savedSnapshot.items) ? savedSnapshot.items : []
     };
   }
@@ -619,7 +665,7 @@ function isStorageType(typeOrBuilding) {
 
 function storageFormOf(typeOrBuilding) {
   const type = typeof typeOrBuilding === 'string' ? typeOrBuilding : typeOrBuilding?.type;
-  return buildings[type]?.storageForm || (type === 'logisticsStation' ? 'solid' : null);
+  return buildings[type]?.storageForm || (type === 'logisticsStation' ? 'all' : null);
 }
 
 function resourceForm(resource) {
@@ -643,6 +689,11 @@ function storageCapacity(building) {
   return capacityByForm[storageFormOf(building)]?.[level - 1] || 0;
 }
 
+function storageAcceptsResource(building, resource) {
+  const form = storageFormOf(building);
+  return form === 'all' || form === resourceForm(resource);
+}
+
 function storageUsed(building) {
   return Object.values(building?.stock || {}).reduce((sum, amount) => sum + Math.max(0, amount), 0);
 }
@@ -657,14 +708,15 @@ function storageBuildings() {
 
 function storageAmount(resource) {
   const form = resourceForm(resource);
-  return storageBuildings().reduce((sum, building) => storageFormOf(building) === form ? sum + (building.stock?.[resource] || 0) : sum, 0);
+  return storageBuildings().reduce((sum, building) => storageAcceptsResource(building, resource) && (storageFormOf(building) === form || storageFormOf(building) === 'all') ? sum + (building.stock?.[resource] || 0) : sum, 0);
 }
 
 function takeFromStorage(resource, amount) {
   let remaining = amount;
   storageBuildings().forEach(building => {
     if (remaining <= 0) return;
-    if (storageFormOf(building) !== resourceForm(resource)) return;
+    if (!storageAcceptsResource(building, resource)) return;
+    if (building.type === 'logisticsStation' && !logisticsStationAllows(building, resource, 'outbound')) return;
     const available = Math.min(remaining, building.stock?.[resource] || 0);
     if (available <= 0) return;
     building.stock[resource] -= available;
@@ -677,7 +729,56 @@ function putInStorage(resource, amount) {
   let remaining = amount;
   storageBuildings().forEach(building => {
     if (remaining <= 0) return;
-    if (storageFormOf(building) !== resourceForm(resource)) return;
+    if (!storageAcceptsResource(building, resource)) return;
+    if (building.type === 'logisticsStation' && !logisticsStationAllows(building, resource, 'inbound')) return;
+    const available = Math.min(remaining, Math.max(0, storageCapacity(building) - storageUsed(building)));
+    if (available <= 0) return;
+    building.stock[resource] = (building.stock[resource] || 0) + available;
+    remaining -= available;
+  });
+  return amount - remaining;
+}
+
+function planetBuildings(planetId) {
+  if (planetId === state.activePlanet) return state.buildings;
+  return state.planetSnapshots?.[planetId]?.buildings || [];
+}
+
+function planetLogisticsStations(planetId) {
+  return planetBuildings(planetId).filter(building => building.type === 'logisticsStation' && isBuildingOperational(building));
+}
+
+function logisticsStationAllows(station, resource, direction = 'both') {
+  if (!station || station.type !== 'logisticsStation' || !storageAcceptsResource(station, resource)) return false;
+  const mode = station.logisticsMode || 'both';
+  if (mode !== 'both' && mode !== direction) return false;
+  return !station.logisticsFilter || station.logisticsFilter === 'all' || station.logisticsFilter === resource;
+}
+
+function planetLogisticsTargets(planetId, resource, direction) {
+  const allStations = planetLogisticsStations(planetId);
+  if (allStations.length) return allStations.filter(station => logisticsStationAllows(station, resource, direction));
+  // The starter hub is a temporary dock for a first landing. A real remote
+  // factory can switch to explicit station filters after it is established.
+  return planetBuildings(planetId).filter(building => building.baseHub && isStorageType(building) && storageAcceptsResource(building, resource));
+}
+
+function takeFromPlanetLogistics(planetId, resource, amount) {
+  let remaining = amount;
+  planetLogisticsTargets(planetId, resource, 'outbound').forEach(building => {
+    if (remaining <= 0) return;
+    const available = Math.min(remaining, building.stock?.[resource] || 0);
+    if (available <= 0) return;
+    building.stock[resource] -= available;
+    remaining -= available;
+  });
+  return amount - remaining;
+}
+
+function putIntoPlanetLogistics(planetId, resource, amount) {
+  let remaining = amount;
+  planetLogisticsTargets(planetId, resource, 'inbound').forEach(building => {
+    if (remaining <= 0) return;
     const available = Math.min(remaining, Math.max(0, storageCapacity(building) - storageUsed(building)));
     if (available <= 0) return;
     building.stock[resource] = (building.stock[resource] || 0) + available;
@@ -699,7 +800,13 @@ function isInsideWorld(cell) {
 
 function terrainAt(cell, planetId = null) {
   if (!isInsideWorld(cell)) return { kind: 'void', label: '地图边界', short: '边界' };
-  const currentPlanet = planetId || (typeof state !== 'undefined' ? state.activePlanet : 'home');
+  let currentPlanet = planetId || 'home';
+  // `readSave` validates footprints before the top-level `state` binding is
+  // initialized, so access it inside a try block instead of using `typeof`
+  // against a lexical binding in its temporal dead zone.
+  if (!planetId) {
+    try { currentPlanet = state?.activePlanet || 'home'; } catch (error) { currentPlanet = 'home'; }
+  }
   const profile = terrainProfiles[currentPlanet] || terrainRegions;
   return profile.find(region => cell.x >= region.minX && cell.x <= region.maxX && cell.y >= region.minY && cell.y <= region.maxY)
     || { kind: 'plain', label: '稳定平原', short: '平原' };
@@ -736,7 +843,7 @@ function normalizeSavedBuildings(savedBuildings) {
       input: { ...(building.input || {}) },
       output: { ...(building.output || {}) },
       stock: isStorageType(building)
-        ? Object.fromEntries(Object.entries(building.stock || {}).filter(([resource]) => storageFormOf(building) === resourceForm(resource)))
+        ? Object.fromEntries(Object.entries(building.stock || {}).filter(([resource]) => storageAcceptsResource(building, resource)))
         : undefined,
       sorterRules: building.type === 'sorter' ? { ...(building.sorterRules || {}) } : undefined,
       routeCursor: building.type === 'sorter' ? Math.max(0, Number.isInteger(building.routeCursor) ? building.routeCursor : 0) : undefined,
@@ -745,9 +852,13 @@ function normalizeSavedBuildings(savedBuildings) {
         ? (assemblyRecipes[building.recipeId] ? building.recipeId : building.type === 'workbench' ? 'gear' : 'processor')
         : undefined,
       fuelTimer: Number.isFinite(building.fuelTimer) ? Math.max(0, building.fuelTimer) : 0,
+      constructionRemaining: Math.max(0, Number(building.constructionRemaining) || 0),
+      constructionTotal: Math.max(0, Number(building.constructionTotal) || 0),
       constructionKit: true,
       gridEnabled: isPowerTowerType(building.type) ? building.gridEnabled !== false : undefined,
-      baseHub: ['storage', 'solidStorage'].includes(building.type) ? building.baseHub === true : undefined
+      baseHub: ['storage', 'solidStorage'].includes(building.type) ? building.baseHub === true : undefined,
+      logisticsFilter: building.type === 'logisticsStation' ? (building.logisticsFilter || 'all') : undefined,
+      logisticsMode: building.type === 'logisticsStation' && ['inbound', 'outbound', 'both'].includes(building.logisticsMode) ? building.logisticsMode : building.type === 'logisticsStation' ? 'both' : undefined
     };
     Object.keys(normalized.input).forEach(resource => {
       normalized.input[resource] = clamp(normalized.input[resource] || 0, 0, inputCapacity(normalized));
@@ -822,7 +933,8 @@ function readSave() {
   try {
     const saved = JSON.parse(localStorage.getItem(SAVE_KEY) || localStorage.getItem(LEGACY_SAVE_KEY) || 'null');
     if (!saved) return null;
-    const savedNodes = Array.isArray(saved.nodes) && saved.nodes.length ? saved.nodes : initialNodeState.map(node => ({ ...node }));
+    const savedPlanetId = planetById[saved.activePlanet] ? saved.activePlanet : 'home';
+    const savedNodes = Array.isArray(saved.nodes) && saved.nodes.length ? mergePlanetNodes(savedPlanetId, saved.nodes) : clonePlanetNodes(savedPlanetId);
     const savedBuildings = Array.isArray(saved.buildings)
       ? repairSavedBuildingFootprints(normalizeSavedBuildings(saved.buildings), savedNodes)
       : [];
@@ -847,6 +959,7 @@ function readSave() {
       inventory: { ...startingInventory, ...(saved.inventory || {}) },
       kits: { ...startingKits, ...(saved.kits || {}) },
       items: (Array.isArray(saved.items) ? saved.items : []).filter(item => item && item.beltId && item.resource),
+      craftingQueue: Array.isArray(saved.craftingQueue) ? saved.craftingQueue.filter(entry => entry && entry.recipeId).map(entry => ({ ...entry, remaining: Math.max(0, Number(entry.remaining) || 0), total: Math.max(0, Number(entry.total) || 0) })) : [],
       nodes: savedNodes,
       time: Number.isFinite(saved.time) ? saved.time : 6 * 3600,
       tech: Array.isArray(saved.tech) && saved.tech.length ? [...new Set(['foundation', ...saved.tech])] : [...startingTech],
@@ -886,13 +999,14 @@ const state = {
   pointer: { cell: { x: 0, y: 0 }, down: false, startCell: null, startBuildingId: null, sorterAnchor: null, panning: false, lastX: 0, lastY: 0 },
   buildings: saved?.buildings || [(() => { const storage = makeBuilding('storage', 3, -1); storage.baseHub = true; storage.stock = { ...startingStorageStock }; return storage; })()],
   belts: saved?.belts || [],
-  nodes: saved?.nodes || initialNodeState.map(node => ({ ...node })),
+  nodes: saved?.nodes || clonePlanetNodes('home'),
   items: [],
   inventory: { ...startingInventory, ...(saved?.inventory || {}) },
   kits: { ...startingKits, ...(saved?.kits || {}) },
   time: saved?.time ?? 6 * 3600,
   tech: saved?.tech || [...startingTech],
   research: saved?.research || { current: null, progress: 0 },
+  craftingQueue: saved?.craftingQueue || [],
   interstellar: makeInterstellarState(saved?.interstellar),
   stellarProject: makeStellarProject(saved?.stellarProject),
   activePlanet: saved?.activePlanet && planetById[saved.activePlanet] ? saved.activePlanet : 'home',
@@ -915,13 +1029,19 @@ const state = {
 };
 {
   const savedBeltIds = new Set(state.belts.map(belt => belt.id));
-  state.items = (saved?.items || []).filter(item => item && item.beltId && item.resource && savedBeltIds.has(item.beltId)).map(item => ({
-    id: item.id || `item-${Math.random().toString(36).slice(2, 7)}`,
-    beltId: item.beltId,
-    sourceId: item.sourceId || null,
-    resource: item.resource,
-    progress: Math.min(1, Math.max(0, Number(item.progress) || 0))
-  }));
+  state.items = (saved?.items || []).filter(item => item && item.beltId && item.resource && savedBeltIds.has(item.beltId)).map(item => {
+    const belt = state.belts.find(entry => entry.id === item.beltId);
+    const legacyPosition = Math.max(0, Math.min((belt?.length || 1) - 1, (Number(item.progress) || 0) * Math.max(0, (belt?.length || 1) - 1)));
+    const segmentIndex = Number.isInteger(item.segmentIndex) ? Math.max(0, Math.min((belt?.length || 1) - 1, item.segmentIndex)) : Math.floor(legacyPosition);
+    return {
+      id: item.id || `item-${Math.random().toString(36).slice(2, 7)}`,
+      beltId: item.beltId,
+      sourceId: item.sourceId || null,
+      resource: item.resource,
+      segmentIndex,
+      progress: Number.isInteger(item.segmentIndex) ? Math.min(1, Math.max(0, Number(item.progress) || 0)) : legacyPosition - segmentIndex
+    };
+  });
 }
 function query(selector) { return document.querySelector(selector); }
 function all(selector) { return [...document.querySelectorAll(selector)]; }

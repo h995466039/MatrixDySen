@@ -27,13 +27,14 @@ function saveGame() {
     time: state.time,
     tech: state.tech,
     research: state.research,
+    craftingQueue: state.craftingQueue,
     interstellar: state.interstellar,
     stellarProject: state.stellarProject,
     activePlanet: state.activePlanet,
     planetSnapshots: state.planetSnapshots,
     career: state.career || 'logistics',
     careerChosen: state.careerChosen,
-    items: state.items.map(item => ({ id: item.id, beltId: item.beltId, sourceId: item.sourceId, resource: item.resource, progress: item.progress }))
+    items: state.items.map(item => ({ id: item.id, beltId: item.beltId, sourceId: item.sourceId, resource: item.resource, segmentIndex: item.segmentIndex, progress: item.progress }))
   }));
   } catch (error) {
     if (!saveFailureNotified) {
@@ -80,19 +81,19 @@ function roundedRect(context, x, y, width, height, radius) {
 
 function drawTerrainTile(terrain, point, size, parity, gridX, gridY, target = ctx) {
   const base = terrain.kind === 'rock'
-    ? (parity ? 'rgba(61,79,91,.58)' : 'rgba(54,71,84,.58)')
+    ? (parity ? 'rgba(78,92,99,.68)' : 'rgba(68,83,91,.68)')
     : terrain.kind === 'water'
-      ? (parity ? 'rgba(18,73,101,.7)' : 'rgba(15,63,91,.7)')
+      ? (parity ? 'rgba(27,88,111,.76)' : 'rgba(22,75,99,.76)')
       : terrain.kind === 'void'
-        ? 'rgba(4,12,21,.86)'
-        : (parity ? 'rgba(18,42,54,.45)' : 'rgba(14,35,47,.45)');
+        ? 'rgba(8,17,27,.9)'
+        : (parity ? 'rgba(27,54,65,.62)' : 'rgba(23,47,59,.62)');
   target.fillStyle = base;
   target.fillRect(point.x, point.y, size + 1, size + 1);
 
   const terrainTile = terrain.kind === 'water' ? assets.waterTile : terrain.kind === 'rock' ? assets.rockTile : assets.groundTile;
   if (terrain.kind !== 'void' && hasImage(terrainTile)) {
     target.save();
-    target.globalAlpha = terrain.kind === 'water' ? .86 : terrain.kind === 'rock' ? .48 : .18;
+    target.globalAlpha = terrain.kind === 'water' ? .9 : terrain.kind === 'rock' ? .54 : .24;
     target.beginPath();
     target.rect(point.x, point.y, size + 1, size + 1);
     target.clip();
@@ -105,7 +106,7 @@ function drawTerrainTile(terrain, point, size, parity, gridX, gridY, target = ct
 
   if (terrain.kind === 'water') {
     target.save();
-      target.strokeStyle = 'rgba(142,236,235,.28)';
+      target.strokeStyle = 'rgba(151,222,217,.38)';
     target.lineWidth = Math.max(1, state.zoom * .8);
     [.28, .56, .78].forEach((offset, index) => {
       const waveY = point.y + size * offset;
@@ -118,8 +119,8 @@ function drawTerrainTile(terrain, point, size, parity, gridX, gridY, target = ct
     target.restore();
   } else if (terrain.kind === 'rock') {
     target.save();
-    target.strokeStyle = 'rgba(183,204,207,.34)';
-    target.fillStyle = 'rgba(183,204,207,.13)';
+    target.strokeStyle = 'rgba(204,215,210,.42)';
+    target.fillStyle = 'rgba(204,215,210,.18)';
     target.lineWidth = Math.max(1, state.zoom * .8);
     target.beginPath();
     target.moveTo(point.x + size * .18, point.y + size * .7);
@@ -133,7 +134,7 @@ function drawTerrainTile(terrain, point, size, parity, gridX, gridY, target = ct
     target.restore();
   } else if (terrain.kind === 'plain') {
     target.save();
-    target.strokeStyle = 'rgba(105,216,218,.08)';
+    target.strokeStyle = 'rgba(154,181,183,.13)';
     target.lineWidth = 1;
     target.strokeRect(point.x + size * .16, point.y + size * .16, size * .68, size * .68);
     target.restore();
@@ -156,13 +157,13 @@ function drawGround() {
     const layer = terrainLayerCache.getContext('2d');
     layer.setTransform(1, 0, 0, 1, 0, 0);
     layer.clearRect(0, 0, width, height);
-    layer.fillStyle = '#081522';
+    layer.fillStyle = '#172832';
     layer.fillRect(0, 0, width, height);
     if (hasImage(assets.groundTile)) {
       const groundPattern = layer.createPattern(assets.groundTile, 'repeat');
       if (groundPattern) {
         layer.save();
-        layer.globalAlpha = .16;
+        layer.globalAlpha = .2;
         layer.fillStyle = groundPattern;
         layer.fillRect(0, 0, width, height);
         layer.restore();
@@ -178,7 +179,7 @@ function drawGround() {
         drawTerrainTile(terrainAt({ x, y }), point, tileSize, Math.abs(x + y) % 2, x, y, layer);
       }
     }
-    layer.strokeStyle = state.tool === 'belt' ? 'rgba(105,216,218,.28)' : 'rgba(165,204,200,.1)';
+    layer.strokeStyle = state.tool === 'belt' ? 'rgba(121,206,208,.42)' : 'rgba(165,188,190,.2)';
     layer.lineWidth = 1;
     for (let x = minX; x <= maxX + 1; x += 1) {
       const point = worldToScreen(x, minY);
@@ -195,7 +196,7 @@ function drawGround() {
     const y = ((index * 47 + 31) % Math.max(height, 1));
     const radius = index % 7 === 0 ? 1.4 : .7;
     const twinkle = .7 + Math.sin(state.animTime * 1.7 + index * 2.4) * .3;
-    ctx.fillStyle = index % 4 === 0 ? `rgba(105,216,218,${.32 * twinkle})` : `rgba(225,241,230,${.28 * twinkle})`;
+    ctx.fillStyle = index % 4 === 0 ? `rgba(121,206,208,${.34 * twinkle})` : `rgba(241,235,208,${.24 * twinkle})`;
     ctx.beginPath();
     ctx.arc(x, y, radius, 0, Math.PI * 2);
     ctx.fill();
@@ -233,16 +234,19 @@ function drawResourceNode(node) {
   const meta = resources[node.resource];
   ctx.save();
   ctx.globalAlpha = .96;
-  ctx.fillStyle = `${meta.color}18`;
+  ctx.fillStyle = `${meta.color}30`;
   ctx.beginPath(); ctx.arc(point.x, point.y + size * .22, size * .46, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = `${meta.color}55`;
+  ctx.strokeStyle = `${meta.color}78`;
   ctx.lineWidth = 1;
   ctx.beginPath(); ctx.arc(point.x, point.y + size * .22, size * .46, 0, Math.PI * 2); ctx.stroke();
   const nodeAsset = rasterizedAsset(meta.image);
   if (nodeAsset) {
     const pulse = 1 + Math.sin(state.animTime * 1.8 + node.x * .7 + node.y) * .035;
     const imageSize = size * pulse;
+    ctx.shadowColor = meta.color;
+    ctx.shadowBlur = Math.max(6, 14 * state.zoom);
     ctx.drawImage(nodeAsset, point.x - imageSize / 2, point.y - imageSize / 2, imageSize, imageSize);
+    ctx.shadowBlur = 0;
   } else {
     drawResourceGlyph(node.resource, point.x, point.y, size * .72, .92);
   }
@@ -324,7 +328,7 @@ function getBeltEnd(belt) {
   return { x: belt.x + belt.dx * (belt.length - 1), y: belt.y + belt.dy * (belt.length - 1) };
 }
 
-const MINIMAP_SPAN = 88;
+const MINIMAP_SPAN = 152;
 function drawMinimap() {
   const minimap = document.getElementById('minimap');
   if (!minimap) return;
@@ -487,14 +491,14 @@ function findBeltPath(start, end) {
 
 function drawBelt(belt, preview = false) {
   const selected = state.selectedBeltId === belt.id;
-  const color = preview ? '#69d8da' : selected ? '#c7d94c' : '#4db7c2';
+  const color = preview ? '#79ced0' : selected ? '#c6d86b' : '#5fb8c0';
   beltCells(belt).forEach((cell, index) => {
     const point = worldToScreen(cell.x, cell.y);
     const size = TILE * state.zoom;
     const horizontal = belt.dx !== 0;
     ctx.save();
     ctx.globalAlpha = preview ? .55 : selected ? .98 : .88;
-    ctx.fillStyle = preview ? 'rgba(105,216,218,.22)' : 'rgba(16,49,63,.94)';
+    ctx.fillStyle = preview ? 'rgba(121,206,208,.28)' : 'rgba(20,54,66,.96)';
     const bridge = belt.dx === 0 && belt.dy === 0;
     const beltX = bridge ? point.x + size * .2 : horizontal ? point.x + 4 : point.x + size * .33;
     const beltY = bridge ? point.y + size * .2 : horizontal ? point.y + size * .33 : point.y + 4;
@@ -506,7 +510,7 @@ function drawBelt(belt, preview = false) {
     ctx.stroke();
     if (selected) {
       ctx.save();
-      ctx.strokeStyle = 'rgba(199,217,76,.5)';
+      ctx.strokeStyle = 'rgba(198,216,107,.58)';
       ctx.lineWidth = Math.max(1, state.zoom * 4.2);
       ctx.globalAlpha = .34;
       ctx.stroke();
@@ -531,12 +535,12 @@ function drawBelt(belt, preview = false) {
         x: point.x + size / 2 + belt.dx * (flow - .5) * size * .58,
         y: point.y + size / 2 + belt.dy * (flow - .5) * size * .58
       };
-      ctx.fillStyle = '#b9ffff';
-      ctx.globalAlpha = .42;
+      ctx.fillStyle = '#ddffff';
+      ctx.globalAlpha = .72;
       ctx.beginPath(); ctx.arc(flowPoint.x, flowPoint.y, Math.max(1.2, state.zoom * 1.4), 0, Math.PI * 2); ctx.fill();
     }
     if (index === belt.length - 1 && !preview) {
-      ctx.fillStyle = '#b9ffff'; ctx.beginPath(); ctx.arc(point.x + size / 2, point.y + size / 2, 2.4, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#e7ffff'; ctx.beginPath(); ctx.arc(point.x + size / 2, point.y + size / 2, 2.8, 0, Math.PI * 2); ctx.fill();
     }
     ctx.restore();
   });
@@ -694,7 +698,7 @@ function drawBuilding(building) {
   ctx.translate(point.x + size / 2, point.y + size / 2);
   ctx.rotate((building.rotation * Math.PI) / 180);
   ctx.translate(-size / 2, -size / 2);
-  ctx.fillStyle = 'rgba(14,29,42,.96)';
+    ctx.fillStyle = 'rgba(24,40,50,.97)';
   roundedRect(ctx, 2, 2, size - 4, size - 6, 5); ctx.fill();
   ctx.strokeStyle = meta.color;
   ctx.lineWidth = selected ? 2.4 : 1.2;

@@ -3,10 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#07111d" />
-    <title>星环回声 · 行星工厂</title>
-  <link rel="stylesheet" href="game.css?v=20260923-holo" />
-  <link rel="stylesheet" href="ui-redesign.css?v=20260923-holo" />
+    <meta name="theme-color" content="#0b141f" />
+    <title>星环回声 · 地表工厂指挥台</title>
+  <link rel="stylesheet" href="game.css?v=20260924-field" />
+  <link rel="stylesheet" href="ui-redesign.css?v=20260924-field" />
   <link rel="icon" href="data:," />
   </head>
   <body class="loading">
@@ -27,40 +27,53 @@
       <div class="screen-vignette"></div>
 
       <header class="game-topbar">
-        <div class="game-brand"><span class="brand-orbit"><i></i><i></i></span><span><b>星环回声</b><small>行星工厂 / 早期测试版</small></span></div>
-        <div class="world-readout"><span id="world-name">晨星-03</span><strong id="game-clock">DAY 001 · 06:00</strong></div>
-        <div class="top-actions"><button class="career-chip" id="career-button" title="查看职业能力"><img src="godot_game/assets/generated/character-logistics-director-v01.png" alt="" /><span id="career-label">物流主管</span></button><button class="hud-button goal-trigger" id="goal-button" title="查看远征目标"><span class="goal-glyph">◎</span><span>目标</span><i id="goal-button-state">当前阶段</i></button><button class="hud-button craft-trigger" id="craft-button" title="打开应急制造"><span class="craft-glyph">⌗</span><span>制造</span><i id="craft-button-state">应急</i></button><button class="hud-button tech-trigger" id="tech-button"><span class="tech-glyph">⌬</span><span>科技</span><i id="tech-button-state">待命</i></button><button class="hud-button map-trigger" id="map-button"><span class="map-glyph">✦</span><span>星图</span><i id="map-button-state">母星</i></button><button class="hud-button speed-button" id="speed-button" title="切换模拟速度"><span>»</span><span id="speed-label">1x</span></button><button class="hud-button" id="pause-button"><span id="pause-glyph">Ⅱ</span><span id="pause-label">暂停</span></button><button class="hud-button" id="reset-button" title="重置本地工厂">↻</button></div>
+        <div class="game-brand"><span class="brand-orbit"><i></i><i></i></span><span><b>星环回声</b><small>行星工厂 / 物流指挥台</small></span></div>
+        <div class="world-readout"><span id="world-name">晨星-03</span><strong id="game-clock" aria-live="polite">DAY 001 · 06:00</strong></div>
+        <div class="top-actions"><button class="career-chip" id="career-button" title="查看职业能力"><img src="godot_game/assets/generated/character-logistics-director-v01.png" alt="" /><span id="career-label">物流主管</span></button><button class="hud-button goal-trigger" id="goal-button" title="查看远征目标"><span class="goal-glyph">◎</span><span>目标</span><i id="goal-button-state">当前阶段</i></button><button class="hud-button craft-trigger" id="craft-button" title="打开应急制造"><span class="craft-glyph">⌗</span><span>制造</span><i id="craft-button-state">应急</i></button><button class="hud-button tech-trigger" id="tech-button" title="打开科技树"><span class="tech-glyph">⌬</span><span>科技</span><i id="tech-button-state">待命</i></button><button class="hud-button map-trigger" id="map-button" title="打开星图与星际物流"><span class="map-glyph">✦</span><span>星图</span><i id="map-button-state">母星</i></button><button class="hud-button speed-button" id="speed-button" title="切换模拟速度"><span>»</span><span id="speed-label">1x</span></button><button class="hud-button" id="pause-button" title="暂停或继续模拟"><span id="pause-glyph">Ⅱ</span><span id="pause-label">暂停</span></button><button class="hud-button" id="reset-button" title="重置本地工厂">↻</button></div>
       </header>
 
-      <div class="resource-hud" id="resource-hud">
-        <div class="resource-stat"><img src="godot_game/assets/generated/resource-iron-ore-v01.png" alt="" /><span><small>铁</small><b id="count-iron">120</b></span></div>
-        <div class="resource-stat"><img src="godot_game/assets/generated/resource-copper-ore-v01.png" alt="" /><span><small>铜</small><b id="count-copper">80</b></span></div>
-        <div class="resource-stat"><img src="godot_game/assets/generated/resource-silicon-crystal-v01.png" alt="" /><span><small>硅</small><b id="count-silicon">50</b></span></div>
-        <div class="resource-stat"><span class="resource-glyph coal-glyph" aria-hidden="true">◆</span><span><small>煤</small><b id="count-coal">0</b></span></div>
-        <div class="resource-stat"><span class="resource-glyph oil-glyph" aria-hidden="true">●</span><span><small>原油</small><b id="count-crudeOil">0</b></span></div>
-        <div class="resource-stat"><span class="resource-glyph water-glyph" aria-hidden="true">≈</span><span><small>水</small><b id="count-water">0</b></span></div>
-        <div class="resource-stat"><span class="resource-glyph gas-glyph" aria-hidden="true">∿</span><span><small>天然气</small><b id="count-naturalGas">0</b></span></div>
-        <div class="resource-stat"><span class="processor-mark"><img src="godot_game/assets/generated/resource-processor-chip-v01.png" alt="" /></span><span><small>处理器</small><b id="count-processor">12</b></span></div>
-        <div class="resource-stat"><img src="godot_game/assets/generated/resource-titanium-crystal-v01.png" alt="" /><span><small>钛</small><b id="count-titanium">0</b></span></div>
-        <div class="power-stat"><span><small id="power-status">未接入电网</small><b id="power-readout">0.0 / 0.0 MW</b></span><i><em id="power-fill"></em></i></div>
-        <div class="production-stat"><span><small>近一分钟产量</small><b id="production-rates">暂无产出</b></span></div>
-      </div>
+      <main class="world-interface" aria-label="行星工厂指挥界面">
+        <aside class="mission-rail" aria-label="任务与科研">
+          <div class="rail-heading"><span>任务中枢</span><b>ACTIVE</b></div>
+          <section class="objective-card">
+            <div class="objective-card-head"><div><span class="eyebrow">当前目标</span><span class="objective-stage" id="objective-stage">落地阶段</span></div><button class="objective-detail" id="objective-detail" title="查看目标详情">详情</button></div>
+            <strong id="objective-title">让第一条产线跑起来</strong>
+            <p id="objective-text">先找到铜矿，放下采矿机，再把原矿送进加工端。</p>
+            <div class="objective-steps" id="objective-steps"></div>
+            <div class="objective-progress"><i id="objective-fill"></i></div>
+            <div class="objective-footer"><span id="objective-progress-label">0%</span><button class="objective-action" id="objective-action">开始建造</button></div>
+          </section>
+          <aside class="research-brief" id="research-brief">
+            <div class="brief-heading"><span class="signal-pulse"></span><span>科研进度</span><button id="brief-tech-button" title="打开科技中枢">⌬</button></div>
+            <strong id="brief-research-name">科研网络待命</strong>
+            <div class="brief-progress"><i id="brief-research-fill"></i></div>
+            <div class="brief-meta"><span id="brief-research-cube">未选择矩阵</span><b id="brief-research-value">0%</b></div>
+          </aside>
+        </aside>
 
-      <aside class="objective-card">
-        <div class="objective-card-head"><div><span class="eyebrow">当前目标</span><span class="objective-stage" id="objective-stage">落地阶段</span></div><button class="objective-detail" id="objective-detail" title="查看目标详情">详情</button></div>
-        <strong id="objective-title">让第一条产线跑起来</strong>
-        <p id="objective-text">先找到铜矿，放下采矿机，再把原矿送进加工端。</p>
-        <div class="objective-steps" id="objective-steps"></div>
-        <div class="objective-progress"><i id="objective-fill"></i></div>
-        <div class="objective-footer"><span id="objective-progress-label">0%</span><button class="objective-action" id="objective-action">开始建造</button></div>
-      </aside>
-
-      <aside class="factory-monitor" id="factory-monitor">
-        <div class="monitor-heading"><span class="signal-pulse"></span><span>工厂状态</span><b id="monitor-status">待命</b></div>
-        <div class="monitor-metrics"><span><small>运行设施</small><b id="monitor-buildings">0</b></span><span><small>运输中</small><b id="monitor-items">0</b></span><span><small>航次</small><b id="monitor-trips">0</b></span></div>
-        <div class="monitor-advice"><span class="monitor-advice-dot"></span><span id="monitor-advice-text">先完成当前目标。</span></div>
-        <div class="monitor-actions"><button class="monitor-detail" id="monitor-detail-button">详情</button><button class="monitor-action" id="monitor-advice-action" hidden>执行建议</button></div>
-      </aside>
+        <aside class="telemetry-rail" aria-label="工厂遥测">
+          <div class="rail-heading"><span>系统遥测</span><b>LIVE</b></div>
+          <section class="resource-hud" id="resource-hud">
+            <div class="resource-stat"><img src="godot_game/assets/generated/resource-iron-ore-v01.png" alt="" /><span><small>铁</small><b id="count-iron">120</b></span></div>
+            <div class="resource-stat"><img src="godot_game/assets/generated/resource-copper-ore-v01.png" alt="" /><span><small>铜</small><b id="count-copper">80</b></span></div>
+            <div class="resource-stat"><img src="godot_game/assets/generated/resource-silicon-crystal-v01.png" alt="" /><span><small>硅</small><b id="count-silicon">50</b></span></div>
+            <div class="resource-stat"><span class="resource-glyph coal-glyph" aria-hidden="true">◆</span><span><small>煤</small><b id="count-coal">0</b></span></div>
+            <div class="resource-stat"><span class="resource-glyph oil-glyph" aria-hidden="true">●</span><span><small>原油</small><b id="count-crudeOil">0</b></span></div>
+            <div class="resource-stat"><span class="resource-glyph water-glyph" aria-hidden="true">≈</span><span><small>水</small><b id="count-water">0</b></span></div>
+            <div class="resource-stat"><span class="resource-glyph gas-glyph" aria-hidden="true">∿</span><span><small>天然气</small><b id="count-naturalGas">0</b></span></div>
+            <div class="resource-stat"><span class="processor-mark"><img src="godot_game/assets/generated/resource-processor-chip-v01.png" alt="" /></span><span><small>处理器</small><b id="count-processor">12</b></span></div>
+            <div class="resource-stat"><img src="godot_game/assets/generated/resource-titanium-crystal-v01.png" alt="" /><span><small>钛</small><b id="count-titanium">0</b></span></div>
+            <div class="power-stat"><span><small id="power-status">未接入电网</small><b id="power-readout">0.0 / 0.0 MW</b></span><i><em id="power-fill"></em></i></div>
+            <div class="production-stat"><span><small>近一分钟产量</small><b id="production-rates">暂无产出</b></span></div>
+          </section>
+          <section class="factory-monitor" id="factory-monitor">
+            <div class="monitor-heading"><span class="signal-pulse"></span><span>工厂状态</span><b id="monitor-status">待命</b></div>
+            <div class="monitor-metrics"><span><small>运行设施</small><b id="monitor-buildings">0</b></span><span><small>运输中</small><b id="monitor-items">0</b></span><span><small>航次</small><b id="monitor-trips">0</b></span></div>
+            <div class="monitor-advice"><span class="monitor-advice-dot"></span><span id="monitor-advice-text">先完成当前目标。</span></div>
+            <div class="monitor-actions"><button class="monitor-detail" id="monitor-detail-button">详情</button><button class="monitor-action" id="monitor-advice-action" hidden>执行建议</button></div>
+          </section>
+        </aside>
+      </main>
 
       <aside class="goal-panel" id="goal-panel" hidden>
         <div class="goal-panel-head"><div><span class="eyebrow">远征目标 / 远景</span><h2>把荒原变成恒星能源工厂</h2><p>先让一个星球运转，再把生产线送往更多星球，最终在恒星轨道完成持续供能。</p></div><button class="panel-close" id="close-goal-panel" title="关闭目标详情">×</button></div>
@@ -81,19 +94,13 @@
         <div class="craft-recipes" id="craft-recipes"></div>
       </aside>
 
-      <aside class="research-brief" id="research-brief">
-        <div class="brief-heading"><span class="signal-pulse"></span><span>科研进度</span><button id="brief-tech-button" title="打开科技中枢">⌬</button></div>
-        <strong id="brief-research-name">科研网络待命</strong>
-        <div class="brief-progress"><i id="brief-research-fill"></i></div>
-        <div class="brief-meta"><span id="brief-research-cube">未选择矩阵</span><b id="brief-research-value">0%</b></div>
-      </aside>
-
       <aside class="selection-card" id="selection-card" hidden>
         <div class="selection-head"><span class="eyebrow">当前设施</span><div class="selection-head-actions"><button id="focus-selection" title="飞行定位到该设施">◎</button><button id="close-selection">×</button></div></div>
         <strong id="selection-name">采矿机</strong><span id="selection-state">待命</span>
         <div class="selection-line"><span>输入</span><b id="selection-input">无</b></div>
         <div class="selection-line"><span>产出</span><b id="selection-output">0 / min</b></div>
         <div class="selection-line"><span>配方</span><b id="selection-recipe">等待输入</b></div>
+        <div class="recipe-options" id="recipe-options" hidden></div>
         <div class="selection-line"><span>产量</span><b id="selection-production">—</b></div>
         <div class="selection-barline"><span>输入就绪</span><i class="selection-bar selection-bar-input"><b id="selection-input-fill"></b></i></div>
         <div class="selection-barline"><span>输出缓存</span><i class="selection-bar selection-bar-output"><b id="selection-output-fill"></b></i></div>
@@ -116,6 +123,7 @@
           <div class="sorter-routing-rules" id="sorter-routing-rules"></div>
         </div>
         <div class="lab-mode-picker" id="lab-mode-picker" hidden><span>矩阵模式</span><div class="lab-mode-options" id="lab-mode-options"><button type="button" data-lab-mode="auto">自动跟随</button><button type="button" data-lab-mode="electromagneticCube">电磁</button><button type="button" data-lab-mode="energyCube">能量</button><button type="button" data-lab-mode="structureCube">结构</button><button type="button" data-lab-mode="informationCube">信息</button></div></div>
+        <div class="logistics-station-picker" id="logistics-station-picker" hidden><span>货物指定</span><div class="logistics-station-options" id="logistics-station-options"></div></div>
         <div class="selection-progress"><i id="selection-progress-fill"></i></div>
         <div class="selection-line"><span id="selection-power-label">电力</span><b id="selection-power">等待选择</b></div>
         <button class="selection-delete" id="selection-delete">拆除并回收</button>

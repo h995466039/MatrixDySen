@@ -20,10 +20,11 @@ query('#reset-button').addEventListener('click', () => {
   state.selectedBeltId = null;
   state.inventory = { ...startingInventory };
   state.kits = { ...startingKits };
-  state.nodes = initialNodeState.map(node => ({ ...node }));
+   state.nodes = clonePlanetNodes('home');
   state.time = 6 * 3600;
   state.tech = [...startingTech];
-  state.research = { current: null, progress: 0 };
+   state.research = { current: null, progress: 0 };
+   state.craftingQueue = [];
   state.interstellar = makeInterstellarState();
   state.stellarProject = makeStellarProject();
   state.activePlanet = 'home';
@@ -59,6 +60,32 @@ query('#selection-recipe').addEventListener('click', () => {
   const building = state.buildings.find(entry => entry.id === state.selectedId);
   if (building && building.type === 'smelter') cycleSmelterRecipe(building);
   if (building && (building.type === 'assembler' || building.type === 'workbench')) cycleAssemblyRecipe(building);
+});
+query('#recipe-options').addEventListener('click', event => {
+  const button = event.target.closest('[data-selection-recipe-id]');
+  if (!button) return;
+  const building = state.buildings.find(entry => entry.id === state.selectedId);
+  if (!building) return;
+  const value = button.dataset.selectionRecipeId;
+  if (building.type === 'smelter') building.recipeResource = value === 'auto' ? null : value;
+  else if (building.type === 'researchLab') {
+    building.researchMode = value;
+    building.manualResearchMode = value !== 'auto';
+  } else if (['assembler', 'workbench'].includes(building.type)) building.recipeId = value;
+  building.process = 0;
+  saveGame();
+  showToast(`${buildings[building.type].label} 已选择配方`);
+  updateHUD();
+  render();
+});
+query('#logistics-station-options').addEventListener('change', event => {
+  const building = state.buildings.find(entry => entry.id === state.selectedId && entry.type === 'logisticsStation');
+  if (!building) return;
+  if (event.target.matches('[data-logistics-filter]')) building.logisticsFilter = event.target.value || 'all';
+  if (event.target.matches('[data-logistics-mode]')) building.logisticsMode = event.target.value || 'both';
+  saveGame();
+  showToast('物流站货物规则已更新');
+  updateHUD();
 });
 query('#selection-grid-action').addEventListener('click', () => {
   const building = state.buildings.find(entry => entry.id === state.selectedId);
