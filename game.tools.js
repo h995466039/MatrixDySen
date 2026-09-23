@@ -136,6 +136,37 @@ function toggleSimulationSpeed() {
   showToast(`模拟速度 · ${state.simulationSpeed}x`);
 }
 
+function stepSimulationSpeed(delta) {
+  const index = simulationSpeeds.indexOf(state.simulationSpeed);
+  const next = simulationSpeeds[clamp(index + delta, 0, simulationSpeeds.length - 1)];
+  if (next === state.simulationSpeed) return;
+  state.simulationSpeed = next;
+  query('#speed-label').textContent = `${state.simulationSpeed}x`;
+  showToast(`模拟速度 · ${next}x`);
+}
+
+let flyState = null;
+function flyToCell(x, y, opts = {}) {
+  if (opts.instant || (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+    flyState = null;
+    state.camera = { x, y };
+    return;
+  }
+  flyState = { from: { x: state.camera.x, y: state.camera.y }, to: { x, y }, start: performance.now(), duration: 420 };
+  requestAnimationFrame(stepFlyTo);
+}
+
+function stepFlyTo(now) {
+  if (!flyState) return;
+  const t = Math.min(1, (now - flyState.start) / flyState.duration);
+  state.camera = {
+    x: flyState.from.x + (flyState.to.x - flyState.from.x) * t,
+    y: flyState.from.y + (flyState.to.y - flyState.from.y) * t
+  };
+  if (t >= 1) flyState = null;
+  else requestAnimationFrame(stepFlyTo);
+}
+
 function applyQaDemoState() {
   const mode = qaDemoMode;
   if (!mode) return;
@@ -665,6 +696,23 @@ function runQaPlaythrough() {
   qaPortCongestion.output = { ironIngot: outputCapacity(qaPortCongestion) };
   check(buildingStatus(qaPortCongestion) === '输出堵塞', '产物达到容量上限后未标记输出堵塞');
   state.buildings = state.buildings.filter(building => building.id !== qaPortCongestion.id);
+  // —— Sprint 16：时间控制 / 小地图 / 飞行定位 ——
+  const qaSpeedBefore = state.simulationSpeed;
+  let qaSpeedCycles = 0;
+  while (state.simulationSpeed !== 10 && qaSpeedCycles < 8) { toggleSimulationSpeed(); qaSpeedCycles += 1; }
+  check(state.simulationSpeed === 10 && query('#speed-label').textContent === '10x', '时间控制没有升到 10x');
+  const qaPauseBefore = state.paused;
+  togglePause();
+  check(state.paused !== qaPauseBefore, '暂停切换未生效');
+  togglePause();
+  check(state.paused === qaPauseBefore, '暂停没有恢复');
+  state.simulationSpeed = qaSpeedBefore;
+  query('#speed-label').textContent = `${state.simulationSpeed}x`;
+  check(Boolean(query('#minimap')), '小地图缺失');
+  const qaCameraBefore = { x: state.camera.x, y: state.camera.y };
+  flyToCell(12, 9, { instant: true });
+  check(Math.abs(state.camera.x - 12) < .5 && Math.abs(state.camera.y - 9) < .5, '飞行定位没有移动相机');
+  state.camera = qaCameraBefore;
   state.confirmRemoveId = null;
   const passed = failures.length === 0;
   const report = passed
@@ -704,6 +752,14 @@ query('#goal-current-action').addEventListener('click', () => {
 });
 query('#pause-button').addEventListener('click', togglePause);
 query('#speed-button').addEventListener('click', toggleSimulationSpeed);
+const focusSelectionButton = query('#focus-selection');
+if (focusSelectionButton) focusSelectionButton.addEventListener('click', () => {
+  const building = state.buildings.find(item => item.id === state.selectedId);
+  if (building) {
+    const center = buildingCenter(building);
+    flyToCell(center.x, center.y);
+  }
+});
 query('#career-button').addEventListener('click', () => toggleCareerPanel());
 query('#close-career-panel').addEventListener('click', () => toggleCareerPanel(false));
 query('#career-confirm').addEventListener('click', confirmCareer);

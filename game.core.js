@@ -375,7 +375,7 @@ const handcraftRecipes = [
   })),
   { id: 'belt', label: '传送带组件', description: '铺设四格基础物流线路。', outputLabel: '传送带 ×4 格', outputType: 'kit', output: 'belt', amount: 4, cost: { iron: 4 } }
 ];
-const simulationSpeeds = [1, 2, 4];
+const simulationSpeeds = [1, 2, 4, 10];
 
 const careerCatalog = {
   logistics: {

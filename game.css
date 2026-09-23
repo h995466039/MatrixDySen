@@ -575,3 +575,6 @@ button:focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; }
 .power-tower-icon { color: var(--cyan); }
 .long-power-tower-icon { color: #8ccfff; }
 .ultra-power-tower-icon { color: #c58cff; }
+.minimap { position: absolute; z-index: 4; left: 24px; bottom: 110px; width: 180px; height: 140px; border: 1px solid var(--line); background: rgba(4, 12, 21, .88); box-shadow: 0 12px 28px rgba(1, 5, 10, .25); backdrop-filter: blur(8px); cursor: pointer; }
+.selection-head-actions { display: flex; gap: 2px; }
+@media (max-width: 900px) { .minimap { left: 14px; bottom: 100px; width: 150px; height: 116px; } }

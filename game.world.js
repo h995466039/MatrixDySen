@@ -324,6 +324,51 @@ function getBeltEnd(belt) {
   return { x: belt.x + belt.dx * (belt.length - 1), y: belt.y + belt.dy * (belt.length - 1) };
 }
 
+const MINIMAP_SPAN = 88;
+function drawMinimap() {
+  const minimap = document.getElementById('minimap');
+  if (!minimap) return;
+  const ctx = minimap.getContext && minimap.getContext('2d');
+  if (!ctx) return;
+  const width = minimap.width || 180;
+  const height = minimap.height || 140;
+  const toPx = world => (world + MINIMAP_SPAN / 2) / MINIMAP_SPAN * width;
+  const toPy = world => (world + MINIMAP_SPAN / 2) / MINIMAP_SPAN * height;
+  try {
+    ctx.clearRect(0, 0, width, height);
+    ctx.fillStyle = 'rgba(6, 15, 25, .92)';
+    ctx.fillRect(0, 0, width, height);
+    ctx.strokeStyle = 'rgba(105, 216, 218, .35)';
+    ctx.lineWidth = 1;
+    state.belts.forEach(belt => {
+      const end = getBeltEnd(belt);
+      ctx.beginPath();
+      ctx.moveTo(toPx(belt.x), toPy(belt.y));
+      ctx.lineTo(toPx(end.x), toPy(end.y));
+      ctx.stroke();
+    });
+    state.nodes.forEach(node => {
+      ctx.fillStyle = (resources[node.resource] || {}).color || '#9aa7b5';
+      ctx.beginPath();
+      ctx.arc(toPx(node.x), toPy(node.y), 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    state.buildings.forEach(building => {
+      const meta = buildings[building.type];
+      ctx.fillStyle = meta && meta.color || '#e8f1f8';
+      const size = Math.max(3, Math.min(5, ((meta && meta.size) || 1) * 2));
+      ctx.fillRect(toPx(building.x) - size / 2, toPy(building.y) - size / 2, size, size);
+    });
+    const halfW = (state.viewport.width / 2) / (TILE * state.zoom);
+    const halfH = (state.viewport.height / 2) / (TILE * state.zoom);
+    ctx.strokeStyle = 'rgba(199, 217, 76, .85)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(toPx(state.camera.x - halfW), toPy(state.camera.y - halfH), halfW * 2 / MINIMAP_SPAN * width, halfH * 2 / MINIMAP_SPAN * height);
+  } catch (error) {
+    // headless jsdom 下 canvas 是 stub，小地图重绘失败不影响主循环
+  }
+}
+
 function beltCells(belt) {
   return Array.from({ length: belt.length }, (_, index) => ({ x: belt.x + belt.dx * index, y: belt.y + belt.dy * index }));
 }

@@ -305,12 +305,15 @@ document.addEventListener('keydown', event => {
   if (event.key.toLowerCase() === 'c') toggleCareerPanel();
   if (event.key.toLowerCase() === 'b') toggleCraftPanel();
   if (event.code === 'Space') { event.preventDefault(); togglePause(); }
+  if (event.key === '=') stepSimulationSpeed(1);
+  if (event.key === '-') stepSimulationSpeed(-1);
   if (event.key === 'Escape') cancelToolSelection(true);
 });
 
 let lastFrame = performance.now();
 let autosaveTime = 0;
 let hudTimer = 0;
+let minimapTimer = 1;
 let gameStarted = false;
 let loopBroken = false;
 function loop(now) {
@@ -325,6 +328,8 @@ function loop(now) {
     if (autosaveTime >= 2) { autosaveTime = 0; saveGame(); }
     hudTimer += dt;
     if (hudTimer >= .12) { hudTimer = 0; updateHUD(); }
+    minimapTimer += dt;
+    if (minimapTimer >= .25) { minimapTimer = 0; if (typeof drawMinimap === 'function') drawMinimap(); }
     if (!query('#star-map-panel').hidden) updateRouteVisual();
   } catch (error) {
     if (!loopBroken) { loopBroken = true; console.error('主循环异常，已隔离本次帧:', error); }
@@ -335,6 +340,31 @@ function loop(now) {
 }
 window.addEventListener('pagehide', () => saveGame());
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveGame(); });
+
+const minimapCanvas = document.getElementById('minimap');
+if (minimapCanvas) {
+  const minimapToWorld = (clientX, clientY) => {
+    const rect = minimapCanvas.getBoundingClientRect();
+    const fx = (clientX - rect.left) / Math.max(1, rect.width);
+    const fy = (clientY - rect.top) / Math.max(1, rect.height);
+    return { x: -MINIMAP_SPAN / 2 + fx * MINIMAP_SPAN, y: -MINIMAP_SPAN / 2 + fy * MINIMAP_SPAN };
+  };
+  let minimapDragging = false;
+  minimapCanvas.addEventListener('pointerdown', event => {
+    minimapDragging = true;
+    minimapCanvas.setPointerCapture(event.pointerId);
+    const target = minimapToWorld(event.clientX, event.clientY);
+    flyState = null;
+    state.camera = { x: target.x, y: target.y };
+  });
+  minimapCanvas.addEventListener('pointermove', event => {
+    if (!minimapDragging) return;
+    const target = minimapToWorld(event.clientX, event.clientY);
+    flyState = null;
+    state.camera = { x: target.x, y: target.y };
+  });
+  window.addEventListener('pointerup', () => { minimapDragging = false; });
+}
 
 function initializeGame() {
   if (gameStarted) return;
