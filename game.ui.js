@@ -156,7 +156,7 @@ function updateStarMapUI() {
       ? '完成「星际物流」后可用'
       : route
         ? '当前货运舱完成后可再次派遣'
-        : `${resources[cargo.resource].label} ×${cargo.amount} · 往返 ${target.travelTime || 0} 秒`;
+        : `${resources[cargo.resource].label} ×${cargo.amount} · 单程 ${effectiveTravelTime(target)} 秒`;
   const landButton = query('#planet-land-button');
   const landLabel = query('#planet-land-label');
   const landNote = query('#planet-land-note');
