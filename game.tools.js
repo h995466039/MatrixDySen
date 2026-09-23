@@ -34,7 +34,11 @@ function cancelToolSelection(announce = false) {
   state.tool = 'inspect';
   setDockCategory('tools');
   state.selectedId = null;
+  state.selectedIds = [];
   state.selectedBeltId = null;
+  state.pasteMode = null;
+  state.selectionRect = null;
+  state.movePreview = null;
   state.pointer.startCell = null;
   state.pointer.startBuildingId = null;
   state.pointer.sorterAnchor = null;
@@ -713,6 +717,30 @@ function runQaPlaythrough() {
   flyToCell(12, 9, { instant: true });
   check(Math.abs(state.camera.x - 12) < .5 && Math.abs(state.camera.y - 9) < .5, '飞行定位没有移动相机');
   state.camera = qaCameraBefore;
+  // —— Sprint 16：框选 / 复制粘贴 ——
+  const qaWindKitsBefore = state.kits?.wind || 0;
+  const qaSelBuildings = [makeBuilding('wind', -22, -20), makeBuilding('wind', -20, -20), makeBuilding('wind', -22, -16)];
+  state.buildings.push(...qaSelBuildings);
+  const qaRectHit = selectBuildingsInRect(-24, -20, -20, -20);
+  check(qaRectHit.length === 2 && qaRectHit.every(building => building.y === -20), '框选纯函数没有正确选中矩形内建筑');
+  state.selectedIds = [qaSelBuildings[0].id, qaSelBuildings[1].id];
+  state.selectedId = null;
+  check(copySelection() && state.clipboard?.length === 2, '复制选中建筑未写入剪贴板');
+  state.kits.wind = qaWindKitsBefore + 2;
+  const qaCountBeforePaste = state.buildings.length;
+  const qaPasteResult = pasteClipboard({ x: 20, y: 12 });
+  check(qaPasteResult && state.buildings.length === qaCountBeforePaste + 2, '粘贴整组放置失败');
+  const qaPasted = state.buildings.filter(building => building.type === 'wind' && building.x >= 20 && building.x <= 22 && building.y === 12);
+  check(qaPasted.length === 2 && qaPasted.some(building => building.x === 22 && building.y === 12), '粘贴布局相对偏移不正确');
+  const qaCountBeforeFail = state.buildings.length;
+  const qaFailResult = pasteClipboard({ x: -22, y: -20 });
+  check(!qaFailResult && state.buildings.length === qaCountBeforeFail, '非法位置粘贴没有整组回滚');
+  state.buildings = state.buildings.filter(building => !qaSelBuildings.includes(building) && !qaPasted.includes(building));
+  state.kits.wind = qaWindKitsBefore;
+  state.selectedIds = [];
+  state.clipboard = null;
+  state.pasteMode = null;
+  rebuildPowerGrids();
   state.confirmRemoveId = null;
   const passed = failures.length === 0;
   const report = passed

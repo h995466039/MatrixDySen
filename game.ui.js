@@ -458,7 +458,7 @@ function drawPowerNetworks() {
 function drawPreview() {
   const cell = state.pointer.cell;
   if (!cell) return;
-  if (state.tool === 'inspect') return;
+  if (state.tool === 'inspect') { drawSelectionOverlays(); return; }
   if (state.tool === 'sorter') {
     drawSorterPreview();
     return;
@@ -550,6 +550,69 @@ function render() {
   drawBeltPortHints();
   drawItems();
   drawPreview();
+}
+
+function drawSelectionOverlays() {
+  const { selectionRect, movePreview, pasteMode, clipboard } = state;
+  if (selectionRect) {
+    const p0 = worldToScreen(selectionRect.x0, selectionRect.y0);
+    const p1 = worldToScreen(selectionRect.x1 + 1, selectionRect.y1 + 1);
+    const x = Math.min(p0.x, p1.x);
+    const y = Math.min(p0.y, p1.y);
+    const w = Math.abs(p1.x - p0.x);
+    const h = Math.abs(p1.y - p0.y);
+    ctx.save();
+    ctx.fillStyle = 'rgba(199, 217, 76, .08)';
+    ctx.strokeStyle = 'rgba(199, 217, 76, .8)';
+    ctx.lineWidth = 1.5;
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeRect(x, y, w, h);
+    ctx.restore();
+  }
+  if (movePreview) {
+    const groupIds = state.selectedIds.length ? state.selectedIds : (state.selectedId ? [state.selectedId] : []);
+    state.buildings.filter(building => groupIds.includes(building.id)).forEach(building => {
+      const meta = buildings[building.type];
+      const target = { x: building.x + movePreview.dx, y: building.y + movePreview.dy };
+      const result = verifyMoveTarget(building, target, new Set(groupIds));
+      const color = result.valid ? '#62d69a' : '#ee6a65';
+      const footprint = footprintCells(target, meta.size);
+      ctx.save();
+      ctx.globalAlpha = .5;
+      ctx.fillStyle = `${color}30`;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 3]);
+      footprint.forEach(entry => {
+        const point = worldToScreen(entry.x, entry.y);
+        ctx.fillRect(point.x + 2, point.y + 2, TILE * state.zoom - 4, TILE * state.zoom - 4);
+        ctx.strokeRect(point.x + 2, point.y + 2, TILE * state.zoom - 4, TILE * state.zoom - 4);
+      });
+      ctx.restore();
+    });
+  }
+  if (pasteMode?.active && clipboard?.length && state.pointer.cell) {
+    clipboard.forEach(entry => {
+      const meta = buildings[entry.type];
+      if (!meta) return;
+      const target = { x: state.pointer.cell.x + entry.dx, y: state.pointer.cell.y + entry.dy };
+      const check = placementCheck(entry.type, target);
+      const color = check.valid ? meta.color : '#ee6a65';
+      const footprint = footprintCells(target, meta.size);
+      ctx.save();
+      ctx.globalAlpha = .45;
+      ctx.fillStyle = `${color}33`;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 3]);
+      footprint.forEach(footprintCell => {
+        const point = worldToScreen(footprintCell.x, footprintCell.y);
+        ctx.fillRect(point.x + 2, point.y + 2, TILE * state.zoom - 4, TILE * state.zoom - 4);
+        ctx.strokeRect(point.x + 2, point.y + 2, TILE * state.zoom - 4, TILE * state.zoom - 4);
+      });
+      ctx.restore();
+    });
+  }
 }
 
 function hasBeltToBuilding(target, resourcesToCheck) {
@@ -1340,7 +1403,28 @@ function updateHUD() {
   const gridLine = query('#selection-grid-line');
   const gridAction = query('#selection-grid-action');
   renderSorterRouting(selected?.type === 'sorter' ? selected : null);
-  if (!selected && !selectedBelt) { selection.hidden = true; labModePicker.hidden = true; sorterInterface.hidden = true; stockLine.hidden = true; interfaceLine.hidden = true; gridLine.hidden = true; gridAction.hidden = true; }
+  const multiCount = state.selectedIds?.length || 0;
+  if (!selected && !selectedBelt && multiCount <= 1) { selection.hidden = true; labModePicker.hidden = true; sorterInterface.hidden = true; stockLine.hidden = true; interfaceLine.hidden = true; gridLine.hidden = true; gridAction.hidden = true; }
+  else if (!selected && !selectedBelt && multiCount > 1) {
+    selection.hidden = false;
+    labModePicker.hidden = true;
+    sorterInterface.hidden = true;
+    stockLine.hidden = true;
+    interfaceLine.hidden = true;
+    gridLine.hidden = true;
+    gridAction.hidden = true;
+    query('#selection-name').textContent = `${multiCount} 座建筑`;
+    query('#selection-state').textContent = '框选状态 · 拖拽整体移动';
+    query('#selection-state').style.color = '#62d69a';
+    query('#selection-input').textContent = state.selectedIds.map(id => buildings[state.buildings.find(building => building.id === id)?.type]?.label || '未知').join('、');
+    query('#selection-output').textContent = '—';
+    query('#selection-recipe').textContent = 'Ctrl+C 复制布局 · 拖拽移动';
+    query('#selection-recipe').style.cursor = 'default';
+    query('#selection-production').textContent = '—';
+    query('#selection-tech').textContent = '—';
+    query('#selection-license').textContent = '—';
+    query('#selection-upgrade').textContent = '—';
+  }
   else if (selectedBelt) {
     const beltItems = state.items.filter(item => item.beltId === selectedBelt.id);
     const resourcesOnBelt = [...new Set(beltItems.map(item => resources[item.resource]?.label || item.resource))];

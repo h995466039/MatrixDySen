@@ -247,6 +247,102 @@ function placeBuilding(cell) {
   showToast(`${buildings[state.tool].label} 已部署`);
 }
 
+// —— Sprint 16：框选 / 批量移动 / 复制粘贴 ——
+function selectBuildingsInRect(x0, y0, x1, y1) {
+  const minX = Math.min(x0, x1);
+  const maxX = Math.max(x0, x1);
+  const minY = Math.min(y0, y1);
+  const maxY = Math.max(y0, y1);
+  return state.buildings.filter(building => building.x >= minX && building.x <= maxX && building.y >= minY && building.y <= maxY);
+}
+
+function verifyMoveTarget(building, toCell, groupIds) {
+  const meta = buildings[building.type];
+  const footprint = footprintCells(toCell, meta.size);
+  if (footprint.some(entry => !isInsideWorld(entry))) return { valid: false, reason: '超出可建造区域' };
+  const collision = buildingCollisionAt(toCell, meta.size);
+  if (collision && !groupIds.has(collision.id)) return { valid: false, reason: `与${buildings[collision.type].label}重叠` };
+  if (footprintBeltAt(toCell, meta.size)) return { valid: false, reason: '压到传送带' };
+  const blocked = footprint.find(entry => isTerrainBlocked(entry));
+  if (blocked) return { valid: false, reason: '地形不可建造' };
+  return { valid: true };
+}
+
+function moveSelectionBy(dx, dy) {
+  const ids = state.selectedIds?.length ? state.selectedIds : (state.selectedId ? [state.selectedId] : []);
+  const group = state.buildings.filter(building => ids.includes(building.id));
+  if (!group.length) return false;
+  if (!dx && !dy) return true;
+  const groupIds = new Set(ids);
+  for (const building of group) {
+    const result = verifyMoveTarget(building, { x: building.x + dx, y: building.y + dy }, groupIds);
+    if (!result.valid) { showToast(`移动失败 · ${result.reason}`, 'warning'); return false; }
+  }
+  group.forEach(building => { building.x += dx; building.y += dy; });
+  rebuildPowerGrids();
+  saveGame();
+  showToast(`已移动 ${group.length} 座建筑 · 传送带未跟随`);
+  return true;
+}
+
+function selectionBuildingIds() {
+  if (state.selectedIds?.length) return state.selectedIds;
+  return state.selectedId ? [state.selectedId] : [];
+}
+
+function copySelection() {
+  const ids = selectionBuildingIds();
+  const group = state.buildings.filter(building => ids.includes(building.id));
+  if (!group.length) { showToast('先选中要复制的建筑', 'warning'); return false; }
+  const origin = { x: Math.min(...group.map(building => building.x)), y: Math.min(...group.map(building => building.y)) };
+  state.clipboard = group.map(building => ({ type: building.type, dx: building.x - origin.x, dy: building.y - origin.y, rotation: building.rotation || 0 }));
+  showToast(`已复制 ${group.length} 座建筑 · 按 Ctrl+V 进入粘贴模式`);
+  return true;
+}
+
+function togglePasteMode() {
+  if (state.pasteMode) { state.pasteMode = null; showToast('退出粘贴模式'); return; }
+  if (!state.clipboard?.length) { showToast('剪贴板为空 · 先选中建筑按 Ctrl+C', 'warning'); return; }
+  state.pasteMode = { active: true };
+  showToast('粘贴模式 · 点击整组放置 · Shift+点击连续放置 · Esc 退出');
+}
+
+function pasteValidation(cell) {
+  const clipboard = state.clipboard;
+  if (!clipboard?.length) return { valid: false, reason: '剪贴板为空' };
+  for (const entry of clipboard) {
+    const check = placementCheck(entry.type, { x: cell.x + entry.dx, y: cell.y + entry.dy });
+    if (!check.valid) return { valid: false, reason: check.reason };
+  }
+  return { valid: true };
+}
+
+function pasteClipboard(cell, keepMode = false) {
+  const validation = pasteValidation(cell);
+  if (!validation.valid) { showToast(`粘贴失败 · ${validation.reason}`, 'warning'); return false; }
+  const placed = [];
+  try {
+    for (const entry of state.clipboard) {
+      const building = makeBuilding(entry.type, cell.x + entry.dx, cell.y + entry.dy, entry.rotation);
+      if (entry.type === 'miner' || ['oilExtractor', 'waterPump', 'gasExtractor'].includes(entry.type)) building.nodeId = findNodeForBuilding(building)?.id || null;
+      if (!consumeBuildKit(entry.type)) throw new Error(`没有${buildings[entry.type].label}库存`);
+      state.buildings.push(building);
+      placed.push(building);
+    }
+  } catch (error) {
+    state.buildings = state.buildings.filter(building => !placed.includes(building));
+    showToast(`粘贴失败 · ${error.message} · 整组回滚`, 'warning');
+    return false;
+  }
+  rebuildPowerGrids();
+  saveGame();
+  if (!keepMode) state.pasteMode = null;
+  state.selectedIds = placed.map(building => building.id);
+  state.selectedId = placed.length === 1 ? placed[0].id : null;
+  showToast(`已粘贴 ${placed.length} 座建筑`);
+  return true;
+}
+
 function beltAt(cell) {
   return state.belts.find(belt => beltCells(belt).some(entry => entry.x === cell.x && entry.y === cell.y));
 }

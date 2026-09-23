@@ -147,6 +147,14 @@ canvas.addEventListener('pointermove', event => {
     state.pointer.lastX = event.clientX; state.pointer.lastY = event.clientY;
   }
   state.pointer.cell = screenToCell(event.clientX, event.clientY);
+  if (state.selectionRect) {
+    state.selectionRect.x1 = state.pointer.cell.x;
+    state.selectionRect.y1 = state.pointer.cell.y;
+  }
+  if (state.movePreview) {
+    state.movePreview.dx = state.pointer.cell.x - state.movePreview.origin.x;
+    state.movePreview.dy = state.pointer.cell.y - state.movePreview.origin.y;
+  }
   if (state.tool === 'demolish' && state.pointer.demolishActive && state.pointer.cell) {
     const last = state.pointer.demolishLast;
     if (!last || last.x !== state.pointer.cell.x || last.y !== state.pointer.cell.y) {
@@ -170,6 +178,26 @@ canvas.addEventListener('pointerdown', event => {
   if (event.button !== 0) return;
   state.pointer.down = true;
   state.pointer.cell = screenToCell(event.clientX, event.clientY);
+  if (state.pasteMode?.active) {
+    const keep = event.shiftKey;
+    if (!pasteClipboard(state.pointer.cell, keep)) keep = false;
+    if (!keep) state.pasteMode = null;
+    state.pointer.down = false;
+    return;
+  }
+  if (state.tool === 'inspect') {
+    if (event.shiftKey) {
+      state.selectionRect = { x0: state.pointer.cell.x, y0: state.pointer.cell.y, x1: state.pointer.cell.x, y1: state.pointer.cell.y };
+      canvas.setPointerCapture(event.pointerId);
+      return;
+    }
+    const under = findBuildingAt(state.pointer.cell);
+    if (under && state.selectedIds.length > 1 && state.selectedIds.includes(under.id)) {
+      state.movePreview = { origin: { x: state.pointer.cell.x, y: state.pointer.cell.y }, dx: 0, dy: 0 };
+      canvas.setPointerCapture(event.pointerId);
+      return;
+    }
+  }
   if (state.tool === 'sorter') {
     const building = findBuildingAt(state.pointer.cell);
     if (isSorterTargetBuilding(building)) {
@@ -206,16 +234,19 @@ canvas.addEventListener('pointerdown', event => {
     const existing = findBuildingAt(state.pointer.cell);
     if (existing) {
       state.selectedId = existing.id;
+      state.selectedIds = [existing.id];
       state.selectedBeltId = null;
       showToast(`${buildings[existing.type].label} · 已打开详情`);
     } else {
       const belt = findBeltAt(state.pointer.cell);
       if (belt) {
         state.selectedId = null;
+        state.selectedIds = [];
         state.selectedBeltId = belt.id;
         showToast(`传送带 · ${belt.length} 格 · 已打开详情`);
       } else {
         state.selectedId = null;
+        state.selectedIds = [];
         state.selectedBeltId = null;
         showToast('已取消选择');
       }
@@ -224,6 +255,29 @@ canvas.addEventListener('pointerdown', event => {
 });
 canvas.addEventListener('pointerup', event => {
   if (event.button === 2) { state.pointer.panning = false; return; }
+  if (state.selectionRect) {
+    const rect = state.selectionRect;
+    state.selectionRect = null;
+    const group = selectBuildingsInRect(rect.x0, rect.y0, rect.x1, rect.y1);
+    if (group.length) {
+      state.selectedIds = group.map(building => building.id);
+      state.selectedId = group.length === 1 ? group[0].id : null;
+      state.selectedBeltId = null;
+      showToast(`已框选 ${group.length} 座建筑 · 拖拽可整体移动`);
+    } else {
+      state.selectedIds = [];
+      state.selectedId = null;
+      state.selectedBeltId = null;
+    }
+    state.pointer.down = false;
+    return;
+  }
+  if (state.movePreview) {
+    moveSelectionBy(state.movePreview.dx, state.movePreview.dy);
+    state.movePreview = null;
+    state.pointer.down = false;
+    return;
+  }
   if (state.tool === 'sorter' && state.pointer.sorterAnchor) {
     const preview = sorterPlacementPreview();
     if (preview?.valid) placeSorterBetween(preview.building, preview.belt, preview.mode);
@@ -298,12 +352,14 @@ document.addEventListener('keydown', event => {
   if (event.key === '0') selectTool('inspect');
   if (event.key >= '1' && event.key <= '9') selectTool(['miner', 'smelter', 'assembler', 'belt', 'demolish', 'waterPump', 'powerTower', 'longPowerTower', 'ultraPowerTower'][Number(event.key) - 1]);
   const toolHotkey = toolHotkeys[event.key.toLowerCase()];
-  if (toolHotkey) selectTool(toolHotkey);
-  if (event.key.toLowerCase() === 'r' && state.tool !== 'inspect' && state.tool !== 'belt' && state.tool !== 'demolish') { state.rotation = (state.rotation + 90) % 360; showToast(`建筑朝向 ${state.rotation}°`); }
-  if (event.key.toLowerCase() === 't') toggleTechPanel();
-  if (event.key.toLowerCase() === 'm') toggleStarMap();
-  if (event.key.toLowerCase() === 'c') toggleCareerPanel();
-  if (event.key.toLowerCase() === 'b') toggleCraftPanel();
+  if (toolHotkey && !event.ctrlKey && !event.metaKey) selectTool(toolHotkey);
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') { event.preventDefault(); copySelection(); return; }
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v') { event.preventDefault(); togglePasteMode(); return; }
+  if (event.key.toLowerCase() === 'r' && state.tool !== 'inspect' && state.tool !== 'belt' && state.tool !== 'demolish' && !event.ctrlKey) { state.rotation = (state.rotation + 90) % 360; showToast(`建筑朝向 ${state.rotation}°`); }
+  if (event.key.toLowerCase() === 't' && !event.ctrlKey) toggleTechPanel();
+  if (event.key.toLowerCase() === 'm' && !event.ctrlKey) toggleStarMap();
+  if (event.key.toLowerCase() === 'c' && !event.ctrlKey) toggleCareerPanel();
+  if (event.key.toLowerCase() === 'b' && !event.ctrlKey) toggleCraftPanel();
   if (event.code === 'Space') { event.preventDefault(); togglePause(); }
   if (event.key === '=') stepSimulationSpeed(1);
   if (event.key === '-') stepSimulationSpeed(-1);
