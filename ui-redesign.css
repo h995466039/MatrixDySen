@@ -598,3 +598,153 @@ body { font-size: 14px; }
 .production-stat span { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .production-stat small { color: var(--faint); font-size: 9px; letter-spacing: .08em; }
 .production-stat b { color: var(--lime); font-size: 11px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ============================================================
+   Holo pass · 明亮全息主题（方向 C）
+   青绿全息 + 玻璃拟态；只覆盖颜色/背景/光效，不动 DOM 契约
+   ============================================================ */
+:root {
+  --sky: #061822;
+  --sky-2: #0a2532;
+  --panel: rgba(9, 33, 43, .78);
+  --panel-strong: rgba(6, 24, 33, .88);
+  --line: rgba(122, 226, 255, .2);
+  --line-bright: rgba(141, 219, 255, .6);
+  --ink: #ecfbff;
+  --muted: #a8cbd6;
+  --faint: #6f93a0;
+  --lime: #b7f79f;
+  --cyan: #5fe8ff;
+  --orange: #ffc266;
+  --red: #ff8080;
+  --green: #57f2b2;
+  --panel-shadow: 0 10px 30px rgba(2, 12, 20, .5);
+}
+
+html, body { background: var(--sky); }
+.game-shell {
+  background:
+    linear-gradient(180deg, rgba(5, 20, 29, .3), rgba(5, 20, 29, .18) 40%, rgba(5, 20, 29, .35)),
+    url('godot_game/assets/generated/ui-bg-holo-main-v01.png') center / cover no-repeat,
+    #061822;
+}
+#game-canvas { filter: saturate(.92) contrast(1.05); }
+.screen-vignette {
+  background:
+    radial-gradient(ellipse at 50% 46%, transparent 34%, rgba(3, 14, 22, .14) 80%, rgba(3, 14, 22, .5) 100%),
+    linear-gradient(180deg, rgba(4, 18, 28, .16), transparent 26%, rgba(4, 18, 28, .18));
+}
+
+.game-topbar {
+  background: linear-gradient(180deg, rgba(10, 40, 54, .9), rgba(6, 26, 37, .82));
+  border-bottom: 1px solid rgba(122, 226, 255, .24);
+  box-shadow: 0 6px 24px rgba(2, 10, 18, .45);
+}
+.world-readout { background: rgba(14, 52, 68, .55); }
+.world-readout strong { color: var(--cyan); }
+
+.objective-card, .selection-card, .resource-hud, .factory-monitor, .goal-panel, .craft-panel, .career-panel, .tech-panel, .star-map-panel, .asset-loader-panel {
+  background: var(--panel);
+  backdrop-filter: blur(14px) saturate(1.25);
+  -webkit-backdrop-filter: blur(14px) saturate(1.25);
+  border-color: rgba(122, 226, 255, .28);
+  box-shadow: 0 14px 40px rgba(2, 10, 18, .5), inset 0 0 26px rgba(95, 232, 255, .05);
+}
+.selection-card { border-color: rgba(95, 232, 255, .4); }
+
+.build-toolbar {
+  background: rgba(7, 29, 40, .8);
+  backdrop-filter: blur(16px) saturate(1.3);
+  -webkit-backdrop-filter: blur(16px) saturate(1.3);
+  border-color: rgba(122, 226, 255, .34);
+  box-shadow: 0 16px 44px rgba(2, 10, 18, .55), inset 0 0 30px rgba(95, 232, 255, .06);
+}
+.tool-button { background: rgba(14, 52, 68, .55); }
+.tool-button:hover, .tool-button.selected {
+  border-color: var(--cyan);
+  background: rgba(95, 232, 255, .14);
+  box-shadow: inset 0 0 14px rgba(95, 232, 255, .12);
+}
+.dock-category-button { color: var(--muted); }
+.dock-category-button.active { color: var(--cyan); border-bottom-color: var(--cyan); }
+
+.tech-panel, .star-map-panel, .goal-panel, .craft-panel, .career-panel {
+  background: var(--panel-strong);
+  backdrop-filter: blur(18px) saturate(1.3);
+  -webkit-backdrop-filter: blur(18px) saturate(1.3);
+}
+.star-map-stage { background: #05141d; }
+.star-map-art {
+  background: url('godot_game/assets/generated/ui-bg-holo-starmap-v01.png') center / cover;
+  opacity: .42;
+  filter: saturate(.85) brightness(.9);
+}
+.cargo-option { background: rgba(14, 52, 68, .5); }
+.cargo-option.active { border-color: var(--cyan); background: rgba(95, 232, 255, .12); }
+.planet-dock { background: rgba(9, 33, 43, .6); }
+
+.game-toast {
+  background: rgba(6, 26, 37, .92);
+  border-color: rgba(122, 226, 255, .4);
+  box-shadow: 0 12px 30px rgba(2, 10, 18, .5), inset 0 0 18px rgba(95, 232, 255, .05);
+}
+.paused-overlay {
+  background: rgba(6, 24, 33, .88);
+  border-color: rgba(122, 226, 255, .4);
+  backdrop-filter: blur(10px);
+}
+.paused-overlay strong { color: var(--cyan); }
+.minimap {
+  background: rgba(5, 22, 31, .88);
+  border-color: rgba(122, 226, 255, .3);
+}
+.dock-tooltip {
+  background: rgba(6, 26, 37, .95);
+  border-color: rgba(122, 226, 255, .4);
+}
+.debug-overlay-badge {
+  background: rgba(6, 26, 37, .9);
+  border-color: rgba(95, 232, 255, .55);
+}
+.launch-button {
+  border-color: rgba(95, 232, 255, .5);
+  box-shadow: inset 0 0 16px rgba(95, 232, 255, .08);
+}
+.launch-button:not(:disabled):hover { box-shadow: inset 0 0 22px rgba(95, 232, 255, .18); }
+
+/* ---- Holo pass 2 · 补齐基线层硬编码旧色的漏网面 ---- */
+.research-brief {
+  background: var(--panel);
+  border-color: rgba(122, 226, 255, .28);
+}
+.terrain-legend, .build-mode-badge {
+  background: rgba(9, 33, 43, .72);
+  border-color: rgba(122, 226, 255, .22);
+  backdrop-filter: blur(10px) saturate(1.2);
+  -webkit-backdrop-filter: blur(10px) saturate(1.2);
+}
+.build-mode-badge[data-mode="inspect"] { border-color: rgba(168, 203, 214, .35); }
+.career-chip, .hud-button { background: rgba(14, 52, 68, .5); }
+.career-chip:hover, .hud-button:hover {
+  border-color: var(--cyan);
+  background: rgba(95, 232, 255, .14);
+  color: var(--ink);
+}
+.career-chip img { border-color: rgba(95, 232, 255, .6); background: rgba(95, 232, 255, .12); }
+.dock-category-button { background: rgba(14, 52, 68, .45); border-color: rgba(122, 226, 255, .16); }
+.dock-category-button:hover { border-color: var(--cyan); }
+.dock-category-button.active {
+  background: rgba(95, 232, 255, .14);
+  box-shadow: inset 0 0 16px rgba(95, 232, 255, .12);
+}
+.objective-action, .monitor-action {
+  border-color: rgba(255, 194, 102, .5);
+  background: rgba(255, 194, 102, .1);
+}
+.objective-action:hover, .monitor-action:hover {
+  border-color: var(--orange);
+  background: rgba(255, 194, 102, .2);
+}
+.objective-detail, .monitor-detail { background: rgba(14, 52, 68, .4); }
+.goal-win { background: rgba(14, 52, 68, .4); border-color: rgba(95, 232, 255, .3); }
+.selection-head button:hover { background: rgba(95, 232, 255, .1); }
