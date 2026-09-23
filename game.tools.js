@@ -617,6 +617,13 @@ function runQaPlaythrough() {
   const energyBefore = state.stellarProject.energyStored;
   simulateBuildings(2);
   check(getPowerGeneration(qaReceiver) > 0 && state.stellarProject.energyStored > energyBefore, '恒星能量接收器没有把戴森框架转成可收集能源');
+  // —— Sprint 19：戴森终局可视化 ——
+  const qaDysonRing = query('#dyson-ring');
+  const qaDysonSegs = qaDysonRing ? qaDysonRing.querySelectorAll('.dyson-seg') : [];
+  check(qaDysonSegs.length === 20, '戴森框架环缺少 20 个节点段');
+  updateDysonRing();
+  check(qaDysonSegs.length === 20 && qaDysonSegs[0].classList.contains('lit') && qaDysonRing.classList.contains('complete'), '戴森环未随节点部署点亮');
+  check(query('#dyson-victory').hidden === false && query('#dyson-victory').textContent.includes('已点亮'), '胜利态徽标未在完成态显示');
   const completedBuildings = state.buildings;
   const completedBelts = state.belts;
   const completedItems = state.items;

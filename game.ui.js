@@ -81,6 +81,21 @@ function updateRouteVisual() {
   ship.classList.toggle('returning', route.phase === 'returning');
 }
 
+function updateDysonRing() {
+  const ring = query('#dyson-ring');
+  const victory = query('#dyson-victory');
+  if (!ring || !victory) return;
+  const segments = ring.querySelectorAll('.dyson-seg');
+  const nodes = state.stellarProject?.nodesDeployed || 0;
+  segments.forEach((segment, index) => segment.classList.toggle('lit', index < nodes));
+  const complete = nodes >= ORBIT_NODE_TARGET && stellarComponentsReady();
+  ring.classList.toggle('complete', complete);
+  victory.hidden = !complete;
+  if (complete) {
+    victory.textContent = `第一圈戴森框架已点亮 · 恒星能量收集 ${(state.stellarProject.energyRate || 0).toFixed(1)} / 秒`;
+  }
+}
+
 function updateStarMapUI() {
   const panel = query('#star-map-panel');
   if (!panel) return;
@@ -114,6 +129,7 @@ function updateStarMapUI() {
     }
   });
   query('#map-button-state').textContent = route ? '航线中' : unlocked ? '已接入' : '未接入';
+  updateDysonRing();
   const worldName = query('#world-name');
   if (worldName) worldName.textContent = activePlanet.name;
   query('#planet-dock-kicker').textContent = target.kicker;

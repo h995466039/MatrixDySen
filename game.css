@@ -588,3 +588,11 @@ button:focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; }
 .selection-bar b { display: block; height: 100%; width: 0%; background: #69d8da; transition: width .2s ease; }
 .selection-barline .selection-bar-output b { background: #c7d94c; }
 @media (prefers-reduced-motion: reduce) { .selection-bar b { transition: none; } }
+.dyson-ring { position: absolute; left: 50%; top: 50%; z-index: 1; width: 132px; height: 132px; transform: translate(-50%, -50%); pointer-events: none; }
+.dyson-ring::before { content: ""; position: absolute; inset: 0; border: 1px dashed rgba(199, 217, 76, .3); border-radius: 50%; transition: border-color .4s ease; }
+.dyson-seg { position: absolute; left: 50%; top: 0; width: 5px; height: 12px; margin-left: -2.5px; background: rgba(199, 217, 76, .16); border-radius: 2px; transform-origin: 50% 66px; transition: background .3s ease, box-shadow .3s ease; }
+.dyson-seg.lit { background: #c7d94c; box-shadow: 0 0 9px rgba(199, 217, 76, .85); }
+.dyson-ring.complete::before { border-color: rgba(199, 217, 76, .75); box-shadow: 0 0 26px rgba(199, 217, 76, .3); }
+.dyson-victory { position: absolute; z-index: 3; left: 50%; top: 12px; transform: translateX(-50%); padding: 6px 12px; border: 1px solid rgba(199, 217, 76, .55); background: rgba(8, 20, 12, .9); color: #c7d94c; font-size: 9px; letter-spacing: .14em; white-space: nowrap; pointer-events: none; }
+.dyson-victory[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) { .dyson-seg, .dyson-ring::before { transition: none; } }

@@ -59,6 +59,10 @@ const assetPaths = {
   processor: 'godot_game/assets/generated/resource-processor-chip-v01.png',
   titanium: 'godot_game/assets/generated/resource-titanium-crystal-v01.png',
   electromagneticCube: 'godot_game/assets/generated/resource_matrix_v02.png',
+  energyCube: 'godot_game/assets/generated/resource-energy-matrix-v01.png',
+  structureCube: 'godot_game/assets/generated/resource-structure-matrix-v01.png',
+  informationCube: 'godot_game/assets/generated/resource-information-matrix-v01.png',
+  freighter: 'godot_game/assets/generated/space-freighter-v01.png',
   miner: 'godot_game/assets/generated/building-mining-drill-v01.png',
   smelter: 'godot_game/assets/generated/building-smelter-v01.png',
   assembler: 'godot_game/assets/generated/building-assembler-v01.png',
@@ -77,6 +81,8 @@ const assetPaths = {
   solidStorage: 'godot_game/assets/generated/building_solid-storage_v01.svg',
   liquidStorage: 'godot_game/assets/generated/building_liquid-storage_v01.svg',
   gasStorage: 'godot_game/assets/generated/building_gas-storage_v01.svg',
+  solarSailLauncher: 'godot_game/assets/generated/building-solar-sail-launcher-v01.png',
+  structureLauncher: 'godot_game/assets/generated/building-structure-rocket-launcher-v01.png',
   groundTile: 'godot_game/assets/generated/godot-v02-ground-tile.png',
   rockTile: 'godot_game/assets/generated/godot-v02-ground-tile.png',
   waterTile: 'godot_game/assets/generated/terrain_water_tile_v01.png',
@@ -239,8 +245,8 @@ const buildings = {
   gasStorage: { label: '气体仓储', size: 2, color: '#b6e7ba', power: .22, cost: { iron: 20, copper: 6, processor: 1 }, tech: 'gas-storage', image: 'gasStorage', storageForm: 'gas' },
   logisticsStation: { label: '行星物流站', size: 3, color: '#c58cff', power: 2.8, cost: { iron: 32, processor: 6, titanium: 4 }, tech: 'interstellar-logistics' },
   stellarReceiver: { label: '恒星能量接收器', size: 2, color: '#f5e29b', power: .6, generation: 10, cost: { iron: 28, processor: 4, orbitNode: 2 }, tech: 'dyson-frame' },
-  solarSailLauncher: { label: '太阳帆发射台', size: 3, color: '#f7e69c', power: 3.8, cost: { iron: 30, processor: 4, structureCube: 4 }, tech: 'orbital-construction' },
-  structureLauncher: { label: '结构火箭发射台', size: 3, color: '#ffb879', power: 4.8, cost: { iron: 36, processor: 6, titanium: 4, structureCube: 4 }, tech: 'orbital-construction' }
+  solarSailLauncher: { label: '太阳帆发射台', size: 3, color: '#f7e69c', power: 3.8, cost: { iron: 30, processor: 4, structureCube: 4 }, tech: 'orbital-construction', image: 'solarSailLauncher' },
+  structureLauncher: { label: '结构火箭发射台', size: 3, color: '#ffb879', power: 4.8, cost: { iron: 36, processor: 6, titanium: 4, structureCube: 4 }, tech: 'orbital-construction', image: 'structureLauncher' }
 };
 
 const cubeRecipes = {
