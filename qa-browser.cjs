@@ -193,6 +193,16 @@ async function main() {
     check(await click('#career-confirm'), '职业确认按钮可点击');
     await waitFor(cdp, "document.querySelector('#career-panel').hidden === true");
     check((await state()).career === 'power', '职业选择写入运行态');
+    check(await click('#tech-button'), '科技树入口可点击');
+    await waitFor(cdp, "document.querySelector('#tech-panel').hidden === false");
+    check(await cdp.eval("document.querySelectorAll('#tech-tree-columns [data-tech-column]').length === 6"), '科技树按六类科技分栏展示');
+    check(await cdp.eval("document.querySelectorAll('#tech-dependency-lines .tech-link-path').length >= 20"), '科技树绘制前后依赖连线');
+    check(await cdp.eval("document.querySelector('[data-tech-node=automated-smelting] .tech-node-requirement').textContent.includes('行星物流')"), '科技节点显示前置科技名称');
+    check(await click('[data-tech-filter="logistics"]'), '科技树分类筛选可切换');
+    check(await cdp.eval("document.querySelectorAll('#tech-tree-columns [data-tech-column]').length === 1 && document.querySelector('[data-tech-column=logistics]')"), '物流分类显示对应科技列');
+    check(await click('[data-tech-filter="all"]'), '科技树可返回全部分类');
+    await cdp.screenshot('01b_tech_tree_categories.png');
+    check(await click('#close-tech-panel'), '科技树关闭按钮可点击');
     await cdp.screenshot('01_fresh_career_confirmed.png');
 
     // Build a small powered production footprint through the actual canvas input path.

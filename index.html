@@ -198,14 +198,41 @@
           <div class="matrix-stock-item" data-matrix="informationCube"><span class="matrix-icon matrix-blue matrix-information" aria-hidden="true"></span><span><small>信息矩阵</small><b id="matrix-informationCube">0</b></span></div>
         </section>
 
-        <section class="tech-section">
-          <div class="tech-section-heading"><div><span class="eyebrow">主线科技</span><h3>恒星工程主线</h3></div><span class="section-count" id="mainline-count">0 / 6</span></div>
-          <div class="tech-track" id="mainline-tech"></div>
-        </section>
-
-        <section class="tech-section branch-section">
-          <div class="tech-section-heading"><div><span class="eyebrow">技术分支</span><h3>技术分支</h3></div><span class="section-count" id="branch-count">0 / 10</span></div>
-          <div class="branch-grid" id="branch-tech"></div>
+        <section class="tech-catalog" aria-label="分类科技树">
+          <div class="tech-catalog-head">
+            <div>
+              <span class="eyebrow">科技树总览</span>
+              <h3>研究分类与依赖链</h3>
+              <p>从左到右查看前置科技与后续解锁；线条箭头表示研究依赖。</p>
+            </div>
+            <div class="tech-catalog-counts" aria-label="科技完成度">
+              <span><b id="mainline-count">0 / 6</b><small>主线</small></span>
+              <span><b id="branch-count">0 / 26</b><small>分支</small></span>
+              <span><b id="tech-total-count">0 / 33</b><small>总计</small></span>
+            </div>
+          </div>
+          <div class="tech-tree-filters" role="tablist" aria-label="科技分类">
+            <button type="button" class="tech-filter active" data-tech-filter="all" role="tab" aria-selected="true">全部科技</button>
+            <button type="button" class="tech-filter" data-tech-filter="core" role="tab" aria-selected="false">主线</button>
+            <button type="button" class="tech-filter" data-tech-filter="logistics" role="tab" aria-selected="false">物流</button>
+            <button type="button" class="tech-filter" data-tech-filter="industry" role="tab" aria-selected="false">工业</button>
+            <button type="button" class="tech-filter" data-tech-filter="power" role="tab" aria-selected="false">能源</button>
+            <button type="button" class="tech-filter" data-tech-filter="manufacturing" role="tab" aria-selected="false">制造</button>
+            <button type="button" class="tech-filter" data-tech-filter="stellar" role="tab" aria-selected="false">恒星工程</button>
+          </div>
+          <div class="tech-tree-legend" aria-label="科技状态图例">
+            <span><i class="tech-legend-dot ready"></i>可研究</span>
+            <span><i class="tech-legend-dot researched"></i>已完成</span>
+            <span><i class="tech-legend-dot locked"></i>等待前置</span>
+            <span class="tech-legend-line"><i></i>前置 → 后续</span>
+          </div>
+          <div class="tech-tree-scroll">
+            <div class="tech-tree-board" id="tech-tree-board">
+              <svg class="tech-dependency-lines" id="tech-dependency-lines" aria-hidden="true" focusable="false"></svg>
+              <div class="tech-tree-columns" id="tech-tree-columns"></div>
+            </div>
+          </div>
+          <div class="tech-dependency-note" id="tech-dependency-note"><span>依赖提示</span> 选择“全部科技”可查看跨分类连接；单独查看分类时，节点仍保留前置科技文字。</div>
         </section>
       </aside>
 

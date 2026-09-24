@@ -272,47 +272,144 @@ function techResearchSeconds(tech) {
   return Math.round((tech.cost / Math.max(.1, 1.25 * getResearchSpeed()) * (1 + cubeTier * .08)) * 10) / 10;
 }
 
-function techNodeMarkup(tech, mainline = false) {
+const techCategoryOrder = ['core', 'logistics', 'industry', 'power', 'manufacturing', 'stellar'];
+const techCategoryMeta = {
+  core: { label: '主线科技', code: 'CORE', description: '行星工业 → 星际网络 → 戴森框架' },
+  logistics: { label: '物流科技', code: 'LOGISTICS', description: '分拣、传送、仓储与跨区吞吐' },
+  industry: { label: '工业科技', code: 'INDUSTRY', description: '采掘、冶炼与工业设备等级' },
+  power: { label: '能源科技', code: 'POWER', description: '风能、热能、输电与燃气' },
+  manufacturing: { label: '制造科技', code: 'MANUFACTURE', description: '工作台、组装与复合材料' },
+  stellar: { label: '恒星工程', code: 'STELLAR', description: '太阳帆、结构火箭与轨道施工' }
+};
+const techCategoryMap = {
+  'sorter-tech': 'logistics', 'belt-mk2': 'logistics', 'storage-mk2': 'logistics', 'fluid-storage': 'logistics',
+  'gas-storage': 'logistics', 'logistics-mk3': 'logistics', 'logistics-mk4': 'logistics', 'logistics-mk5': 'logistics',
+  'mining-mk2': 'industry', 'industrial-mk3': 'industry', 'industrial-mk4': 'industry', 'industrial-mk5': 'industry',
+  'wind-power': 'power', 'thermal-power': 'power', 'oil-processing': 'power', 'oil-extractor-mk2': 'power',
+  'gas-extraction': 'power', 'gas-power': 'power', 'power-transmission': 'power', 'power-grid-mk2': 'power', 'advanced-power-grid': 'power',
+  'workbench-tech': 'manufacturing', 'advanced-assembly': 'manufacturing', 'advanced-materials': 'manufacturing',
+  'stellar-fabrication': 'stellar', 'orbital-construction': 'stellar'
+};
+const techCatalogOrder = [
+  'foundation', 'planetary-logistics', 'automated-smelting', 'matrix-lab', 'interstellar-logistics', 'stellar-network', 'dyson-frame',
+  'sorter-tech', 'belt-mk2', 'storage-mk2', 'fluid-storage', 'gas-storage', 'logistics-mk3', 'logistics-mk4', 'logistics-mk5',
+  'mining-mk2', 'industrial-mk3', 'industrial-mk4', 'industrial-mk5',
+  'wind-power', 'thermal-power', 'oil-processing', 'oil-extractor-mk2', 'gas-extraction', 'gas-power', 'power-transmission', 'power-grid-mk2', 'advanced-power-grid',
+  'workbench-tech', 'advanced-assembly', 'advanced-materials', 'stellar-fabrication', 'orbital-construction'
+];
+let activeTechCategory = 'all';
+
+function techCategoryFor(tech) {
+  if (tech.id === 'foundation' || techTree.mainline.some(node => node.id === tech.id)) return 'core';
+  return techCategoryMap[tech.id] || 'logistics';
+}
+
+function allTechCatalogNodes() {
+  return [foundationTech, ...techTree.mainline, ...techTree.branches];
+}
+
+function categoryTechNodes(category) {
+  return allTechCatalogNodes()
+    .filter(tech => techCategoryFor(tech) === category)
+    .sort((left, right) => techCatalogOrder.indexOf(left.id) - techCatalogOrder.indexOf(right.id));
+}
+
+function techNodeMarkup(tech) {
   const unlocked = isTechUnlocked(tech.id);
   const available = hasTechPrerequisites(tech);
   const active = state.research.current === tech.id;
   const locked = !unlocked && !available;
   const cube = resources[tech.cube] || { label: tech.cube, color: '#69d8da' };
+  const category = techCategoryFor(tech);
+  const categoryMeta = techCategoryMeta[category];
   const requirement = tech.requires?.length
     ? tech.requires.map(id => techById[id]?.label || id).join(' / ')
-    : '基础权限';
+    : tech.id === 'foundation' ? '起点科技' : '基础权限';
   const unlocks = techUnlockText(tech) || '扩展研究权限';
   const upgrades = techUpgradeText(tech);
   const progress = active ? state.research.progress : unlocked ? tech.cost : 0;
-  const percent = clamp((progress / tech.cost) * 100, 0, 100);
-  const classes = ['tech-node', mainline ? 'mainline-node' : 'branch-node'];
+  const percent = tech.cost ? clamp((progress / tech.cost) * 100, 0, 100) : 100;
+  const classes = ['tech-node', `tech-node-${category}`];
   if (unlocked) classes.push('researched');
   if (active) classes.push('researching');
   if (locked) classes.push('locked');
-  return `<button type="button" class="${classes.join(' ')}" data-research="${tech.id}" ${locked || unlocked ? 'disabled' : ''} title="${tech.description}">
-    <span class="tech-node-top"><span class="tech-node-code">${mainline ? 'CORE' : 'BRANCH'}</span><span class="tech-node-state">${unlocked ? '已解锁' : active ? '研究中' : locked ? '前置未完成' : '可研究'}</span></span>
+  return `<button type="button" class="${classes.join(' ')}" data-research="${tech.id}" data-tech-node="${tech.id}" data-tech-category="${category}" ${locked || unlocked ? 'disabled' : ''} title="${tech.description}">
+    <span class="tech-node-top"><span class="tech-node-code">${categoryMeta.code}</span><span class="tech-node-state">${unlocked ? '已完成' : active ? '研究中' : locked ? '前置未完成' : '可研究'}</span></span>
     <strong>${tech.label}</strong>
-    <span class="tech-node-short">${tech.short}</span>
+    <span class="tech-node-short">${tech.short} · ${categoryMeta.label}</span>
     <span class="tech-node-detail">${tech.description}</span>
     <span class="tech-node-footer"><span class="cube-key" style="--cube-color:${cube.color}">${cube.label} ×${tech.cost}</span><span class="tech-node-time">预计 ${techResearchSeconds(tech)} 秒</span><span>${unlocks}</span>${upgrades ? `<span class="tech-node-upgrade">${upgrades}</span>` : ''}<span class="tech-node-effect">${tech.effectText || '扩展研究权限'}</span></span>
-    <span class="tech-node-requirement">前置：${requirement}</span>
+    <span class="tech-node-requirement"><b>前置</b> ${requirement}</span>
     <span class="tech-node-progress"><i style="width:${percent}%"></i></span>
     <span class="tech-node-action">${unlocked ? '研究完成' : active ? '正在消耗矩阵' : locked ? '等待前置' : '开始研究'}</span>
-  </button>${mainline ? '<span class="tech-link" aria-hidden="true"></span>' : ''}`;
+  </button>`;
 }
 
 function renderTechPanel() {
-  query('#mainline-tech').innerHTML = techTree.mainline.map(tech => techNodeMarkup(tech, true)).join('');
-  const mainlineIds = new Set(techTree.mainline.map(tech => tech.id));
-  const lanes = new Map();
-  techTree.branches.forEach(tech => {
-    const root = tech.requires?.find(requirement => mainlineIds.has(requirement)) || tech.requires?.[0] || 'planetary-logistics';
-    if (!lanes.has(root)) lanes.set(root, []);
-    lanes.get(root).push(tech);
+  const board = query('#tech-tree-board');
+  const columns = query('#tech-tree-columns');
+  if (!board || !columns) return;
+  const categories = activeTechCategory === 'all' ? techCategoryOrder : [activeTechCategory];
+  columns.style.setProperty('--tech-column-count', categories.length);
+  board.classList.toggle('tech-tree-filtered', activeTechCategory !== 'all');
+  columns.innerHTML = categories.map(category => {
+    const meta = techCategoryMeta[category];
+    const nodes = categoryTechNodes(category);
+    const researched = nodes.filter(node => isTechUnlocked(node.id)).length;
+    return `<section class="tech-tree-column" data-tech-column="${category}">
+      <header class="tech-column-head"><span class="tech-column-code">${meta.code}</span><div><h4>${meta.label}</h4><p>${meta.description}</p></div><b>${researched}/${nodes.length}</b></header>
+      <div class="tech-tree-column-body">${nodes.map(tech => techNodeMarkup(tech)).join('')}</div>
+    </section>`;
+  }).join('');
+  all('[data-tech-filter]').forEach(button => {
+    button.classList.toggle('active', button.dataset.techFilter === activeTechCategory);
+    button.setAttribute('aria-selected', button.dataset.techFilter === activeTechCategory ? 'true' : 'false');
+    button.onclick = () => {
+      activeTechCategory = button.dataset.techFilter || 'all';
+      renderTechPanel();
+    };
   });
-  query('#branch-tech').innerHTML = [...lanes.entries()].map(([root, nodes]) => `<section class="tech-lane"><div class="tech-lane-head"><span>分支起点</span><strong>${techById[root]?.label || root}</strong><small>${nodes.length} 个后续节点</small></div><div class="tech-lane-path">${nodes.map((tech, index) => `${index ? '<span class="tech-branch-link" aria-hidden="true"></span>' : ''}${techNodeMarkup(tech)}`).join('')}</div></section>`).join('');
   all('[data-research]').forEach(button => button.addEventListener('click', () => startResearch(button.dataset.research)));
   updateResearchUI();
+  const scheduleLinks = window.requestAnimationFrame || (callback => window.setTimeout(callback, 0));
+  scheduleLinks(updateTechLinks);
+}
+
+function updateTechLinks() {
+  const board = query('#tech-tree-board');
+  const svg = query('#tech-dependency-lines');
+  if (!board || !svg) return;
+  const nodeElements = new Map([...board.querySelectorAll('[data-tech-node]')].map(node => [node.dataset.techNode, node]));
+  const boardRect = board.getBoundingClientRect();
+  const width = Math.max(board.clientWidth, board.scrollWidth);
+  const height = Math.max(board.clientHeight, board.scrollHeight);
+  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+  svg.setAttribute('width', String(width));
+  svg.setAttribute('height', String(height));
+  const paths = [];
+  nodeElements.forEach((targetElement, targetId) => {
+    const target = techById[targetId];
+    if (!target?.requires?.length) return;
+    const targetRect = targetElement.getBoundingClientRect();
+    target.requires.forEach(requirementId => {
+      const sourceElement = nodeElements.get(requirementId);
+      if (!sourceElement) return;
+      const sourceRect = sourceElement.getBoundingClientRect();
+      let startX = sourceRect.right - boardRect.left;
+      let endX = targetRect.left - boardRect.left;
+      const startY = sourceRect.top + sourceRect.height / 2 - boardRect.top;
+      const endY = targetRect.top + targetRect.height / 2 - boardRect.top;
+      if (endX < startX) {
+        startX = sourceRect.left - boardRect.left;
+        endX = targetRect.right - boardRect.left;
+      }
+      const bend = Math.max(24, Math.abs(endX - startX) * .42);
+      const sourceDone = isTechUnlocked(requirementId);
+      const targetReady = hasTechPrerequisites(target);
+      paths.push(`<path class="tech-link-path${sourceDone ? ' source-done' : ''}${targetReady ? ' target-ready' : ''}" d="M ${startX.toFixed(1)} ${startY.toFixed(1)} C ${(startX + bend).toFixed(1)} ${startY.toFixed(1)}, ${(endX - bend).toFixed(1)} ${endY.toFixed(1)}, ${endX.toFixed(1)} ${endY.toFixed(1)}"/>`);
+    });
+  });
+  svg.innerHTML = `<defs><marker id="tech-link-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L8 4 L0 8 Z"></path></marker></defs>${paths.join('')}`;
 }
 
 function updateResearchUI() {
@@ -352,6 +449,8 @@ function updateResearchUI() {
   query('#tech-button-state').textContent = tech ? `研究 ${Math.floor(percent)}%` : `${state.tech.filter(id => techTree.mainline.some(node => node.id === id)).length}/${techTree.mainline.length}`;
   query('#mainline-count').textContent = `${techTree.mainline.filter(node => isTechUnlocked(node.id)).length} / ${techTree.mainline.length}`;
   query('#branch-count').textContent = `${techTree.branches.filter(node => isTechUnlocked(node.id)).length} / ${techTree.branches.length}`;
+  const catalogNodes = allTechCatalogNodes();
+  query('#tech-total-count').textContent = `${catalogNodes.filter(node => isTechUnlocked(node.id)).length} / ${catalogNodes.length}`;
   all('[data-matrix]').forEach(item => {
     const resource = item.dataset.matrix;
     item.classList.toggle('matrix-active', tech?.cube === resource);
@@ -370,6 +469,7 @@ function updateResearchUI() {
     const action = button.querySelector('.tech-node-action');
     if (action) action.textContent = unlocked ? '研究完成' : active ? '正在消耗矩阵' : locked ? '等待前置' : '开始研究';
   });
+  if (!query('#tech-panel').hidden) updateTechLinks();
 }
 
 function toggleTechPanel(force) {
